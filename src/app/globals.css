@@ -94,7 +94,7 @@ body {
     @apply flex items-center gap-2.5 px-3 py-2 rounded text-sm
     text-text-secondary hover:text-text-primary hover:bg-surface
     cursor-pointer transition-all duration-150;
-}
+  }
 
   .sidebar-item.active {
     @apply text-text-primary bg-surface-active;

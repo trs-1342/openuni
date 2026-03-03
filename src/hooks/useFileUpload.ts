@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
+import { storage } from '@/lib/firebase'
 import { formatFileSize } from '@/lib/utils'
 
 export type UploadStatus = 'idle' | 'uploading' | 'done' | 'error'
@@ -15,8 +17,8 @@ export interface UploadedFile {
   progress: number       // 0-100
   status: UploadStatus
   error?: string
-  // Firebase'den dönecek — şimdilik boş
-  url?: string
+  url?: string          // Firebase Storage download URL
+  storagePath?: string  // silme için
 }
 
 const ALLOWED_TYPES: Record<string, string[]> = {
@@ -47,7 +49,7 @@ function validate(file: File): string | null {
   return null
 }
 
-export function useFileUpload() {
+export function useFileUpload(uploadPath = 'posts') {
   const [files, setFiles] = useState<UploadedFile[]>([])
 
   const addFiles = useCallback((incoming: File[]) => {
@@ -56,62 +58,79 @@ export function useFileUpload() {
     for (const file of incoming) {
       if (files.length + newEntries.length >= MAX_FILES) break
 
-      const error = validate(file)
-      const id    = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const type  = detectType(file)
+      const error   = validate(file)
+      const id      = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const type    = detectType(file)
       const preview = type === 'image' ? URL.createObjectURL(file) : undefined
 
       newEntries.push({
         id, file, name: file.name, size: file.size,
         type, preview,
-        progress: error ? 0 : 0,
-        status:   error ? 'error' : 'idle',
-        error:    error ?? undefined,
+        progress: 0,
+        status: error ? 'error' : 'idle',
+        error:  error ?? undefined,
       })
     }
 
     setFiles(prev => [...prev, ...newEntries])
 
-    // Simulate upload progress for valid files
+    // Valid olanları Firebase Storage'a yükle
     newEntries
       .filter(f => f.status === 'idle')
-      .forEach(entry => simulateUpload(entry.id))
-  }, [files.length])
+      .forEach(entry => startUpload(entry))
+  }, [files.length, uploadPath])
 
-  function simulateUpload(id: string) {
-    // Bu fonksiyon Firebase Storage entegrasyonunda
-    // gerçek uploadBytesResumable ile değiştirilecek
-    let progress = 0
+  function startUpload(entry: UploadedFile) {
+    const storagePath = `${uploadPath}/${Date.now()}_${entry.name}`
+    const storageRef  = ref(storage, storagePath)
+    const uploadTask  = uploadBytesResumable(storageRef, entry.file)
+
     setFiles(prev =>
-      prev.map(f => f.id === id ? { ...f, status: 'uploading' } : f)
+      prev.map(f => f.id === entry.id ? { ...f, status: 'uploading', storagePath } : f)
     )
 
-    const interval = setInterval(() => {
-      progress += Math.random() * 18 + 8
-      if (progress >= 100) {
-        progress = 100
-        clearInterval(interval)
+    uploadTask.on(
+      'state_changed',
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+        setFiles(prev =>
+          prev.map(f => f.id === entry.id ? { ...f, progress } : f)
+        )
+      },
+      (err) => {
         setFiles(prev =>
           prev.map(f =>
-            f.id === id
-              ? { ...f, progress: 100, status: 'done', url: `https://storage.example.com/${id}` }
+            f.id === entry.id
+              ? { ...f, status: 'error', error: 'Yükleme başarısız: ' + err.message }
               : f
           )
         )
-      } else {
+      },
+      async () => {
+        const url = await getDownloadURL(uploadTask.snapshot.ref)
         setFiles(prev =>
-          prev.map(f => f.id === id ? { ...f, progress } : f)
+          prev.map(f =>
+            f.id === entry.id
+              ? { ...f, status: 'done', progress: 100, url, storagePath }
+              : f
+          )
         )
       }
-    }, 120)
+    )
   }
 
-  function removeFile(id: string) {
-    setFiles(prev => {
-      const file = prev.find(f => f.id === id)
-      if (file?.preview) URL.revokeObjectURL(file.preview)
-      return prev.filter(f => f.id !== id)
-    })
+  async function removeFile(id: string) {
+    const file = files.find(f => f.id === id)
+    if (!file) return
+
+    if (file.storagePath && file.status === 'done') {
+      try {
+        await deleteObject(ref(storage, file.storagePath))
+      } catch { /* dosya yoksa sorun değil */ }
+    }
+
+    if (file.preview) URL.revokeObjectURL(file.preview)
+    setFiles(prev => prev.filter(f => f.id !== id))
   }
 
   function reset() {

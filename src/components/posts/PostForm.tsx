@@ -6,7 +6,10 @@ import { cn, CHANNEL_META } from '@/lib/utils'
 import { DropZone } from '@/components/ui/DropZone'
 import { TagInput } from '@/components/ui/TagInput'
 import { useFileUpload } from '@/hooks/useFileUpload'
-import type { Channel, ChannelType } from '@/types'
+import { useAuthStore } from '@/store/authStore'
+import { useUserProfile } from '@/hooks/useUserProfile'
+import { createPost } from '@/lib/firestore'
+import type { Channel, ChannelType, Attachment } from '@/types'
 import {
   AlertCircle, ArrowLeft, CheckCircle, ChevronDown,
   Eye, Loader2, Lock, Send, Info,
@@ -153,7 +156,9 @@ export function PostForm({ channel, spaceSlug, onCancel }: PostFormProps) {
   const router  = useRouter()
   const config  = FORM_CONFIG[channel.type]
   const meta    = CHANNEL_META[channel.type]
-  const upload  = useFileUpload()
+  const upload  = useFileUpload(`posts/${channel.spaceId}/${channel.id}`)
+  const { user: firebaseUser } = useAuthStore()
+  const { profile } = useUserProfile()
 
   const [values, setValues]       = useState<FormValues>({ title: '', content: '', tags: [] })
   const [errors, setErrors]       = useState<FieldError>({})
@@ -185,16 +190,49 @@ export function PostForm({ channel, spaceSlug, onCancel }: PostFormProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
+    if (!firebaseUser) return
 
     setIsSubmitting(true)
-    // TODO: Firestore'a kaydet
-    await new Promise(r => setTimeout(r, 1200))
-    setIsSubmitting(false)
-    setSubmitted(true)
+    try {
+      // Yüklenen dosyaları Attachment formatına çevir
+      const attachments: Attachment[] = upload.validFiles.map(f => ({
+        id: f.id,
+        postId: '',       // createPost sonrası güncellenemez, şimdilik boş
+        name: f.name,
+        url: f.url!,
+        type: f.type as Attachment['type'],
+        size: f.size,
+        uploadedBy: firebaseUser.uid,
+        uploadedAt: new Date(),
+      }))
 
-    setTimeout(() => {
-      router.push(`/dashboard/spaces/${spaceSlug}/${channel.slug}`)
-    }, 1500)
+      const author = {
+        uid: firebaseUser.uid,
+        displayName: profile?.displayName ?? firebaseUser.displayName ?? 'Kullanıcı',
+        avatarUrl: profile?.avatarUrl,
+        role: profile?.role ?? 'student',
+      } as const
+
+      await createPost({
+        channelId: channel.id,
+        spaceId: channel.spaceId,
+        author,
+        title: values.title.trim(),
+        content: values.content.trim(),
+        tags: values.tags,
+        attachments,
+        isAnnouncement: channel.type === 'announcement',
+      })
+
+      setSubmitted(true)
+      setTimeout(() => {
+        router.push(`/dashboard/spaces/${spaceSlug}/${channel.slug}`)
+      }, 1500)
+    } catch (err: any) {
+      setErrors(prev => ({ ...prev, title: 'Gönderi kaydedilemedi: ' + (err?.message ?? 'Bilinmeyen hata') }))
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const titleLen   = values.title.length

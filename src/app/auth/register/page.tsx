@@ -80,7 +80,10 @@ export default function RegisterPage() {
       })
       router.replace('/auth/verify-email')
     } catch (err: any) {
-      setError(getAuthErrorMessage(err?.code ?? err?.message ?? ''))
+      // Sadece gerçek auth hatalarını göster (Firestore/profile hataları değil)
+      const code = err?.code ?? ''
+      const msg  = getAuthErrorMessage(code)
+      setError(msg ?? 'Bir hata oluştu. Lütfen tekrar deneyin.')
     } finally {
       setIsLoading(false)
     }

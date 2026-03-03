@@ -26,7 +26,7 @@ npm install
 ### 2. Firebase projesi oluştur
 
 1. [Firebase Console](https://console.firebase.google.com)'a git
-2. Yeni proje oluştur: `openuni`
+2. Yeni proje oluştur, örn: `openuni`
 3. Authentication → Email/Password aktif et
 4. Firestore Database oluştur
 5. Storage aktif et
@@ -45,18 +45,3 @@ npm run dev
 ```
 
 Uygulama `http://localhost:3000` adresinde çalışacak.
-
-## Kanal Tipleri
-
-| Tip | Renk | Kural |
-|-----|------|-------|
-| `announcement` | Amber | Sadece moderatör |
-| `academic` | Yeşil | Tartışma açık |
-| `archive` | Mor | Yalnızca dosya |
-| `listing` | Kırmızı | İlan panosu |
-| `suggestion` | Teal | Öneri kutusu |
-| `social` | Mavi | Sohbet açık |
-
-## E-posta Doğrulama
-
-Kayıt için yalnızca `@ogr.gelisim.edu.tr` uzantılı e-posta kabul edilir.
