@@ -1,3 +1,4 @@
+// src/lib/firestore.ts
 import {
   collection,
   doc,
@@ -7,7 +8,6 @@ import {
   updateDoc,
   query,
   where,
-  orderBy,
   limit,
   onSnapshot,
   serverTimestamp,
@@ -19,7 +19,7 @@ import {
 import { db } from './firebase'
 import type { Space, Post, Notification, Channel, User, Comment } from '@/types'
 
-// ─── Timestamp dönüşümü ───────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function fromTimestamp(ts: any): Date {
   if (!ts) return new Date()
   if (ts instanceof Timestamp) return ts.toDate()
@@ -79,13 +79,16 @@ function commentFromDoc(d: any): Comment {
   } as Comment
 }
 
-// Permission hatalarını konsolda sessizce logla (kullanıcıya gösterme)
-function onPermissionError(err: any) {
-  if (err?.code === 'permission-denied') {
-    // Sessiz — Rules henüz ayarlı değil veya kullanıcı yetkisiz
+// Index gerektiren hataları konsola yaz, geri kalanları sessiz yut
+function handleFirestoreError(err: any, label: string) {
+  if (err?.code === 'permission-denied') return // sessiz
+  if (err?.message?.includes('index')) {
+    // Sadece linki göster, stack trace yok
+    const link = err.message.match(/https:\/\/\S+/)?.[0] ?? ''
+    console.warn(`[Index eksik — ${label}] Oluştur: ${link}`)
     return
   }
-  console.error('[Firestore]', err)
+  console.error(`[Firestore — ${label}]`, err.message)
 }
 
 // ─── USER ─────────────────────────────────────────────────────────────────────
@@ -94,10 +97,7 @@ export async function getUserProfile(uid: string): Promise<User | null> {
     const snap = await getDoc(doc(db, 'users', uid))
     if (!snap.exists()) return null
     return userFromDoc(snap)
-  } catch (err: any) {
-    onPermissionError(err)
-    return null
-  }
+  } catch (err) { handleFirestoreError(err, 'getUserProfile'); return null }
 }
 
 export async function updateUserLastActive(uid: string) {
@@ -106,42 +106,25 @@ export async function updateUserLastActive(uid: string) {
   } catch { /* sessiz */ }
 }
 
+export async function updateUserProfile(uid: string, data: Partial<{
+  displayName: string; department: string; grade: number | null; avatarUrl: string
+}>) {
+  await updateDoc(doc(db, 'users', uid), { ...data, lastActiveAt: serverTimestamp() })
+}
+
 // ─── SPACES ───────────────────────────────────────────────────────────────────
-export async function getSpaces(): Promise<Space[]> {
-  try {
-    const snap = await getDocs(
-      query(collection(db, 'spaces'), where('isPublic', '==', true), orderBy('memberCount', 'desc'))
-    )
-    return snap.docs.map(spaceFromDoc)
-  } catch (err: any) {
-    onPermissionError(err)
-    return []
-  }
-}
-
-export function subscribeToSpaces(
-  callback: (spaces: Space[]) => void,
-  onError?: (err: any) => void
-): Unsubscribe {
+// ⚠️ Sadece tek where — orderBy YOK → index gerekmez → client-side sort
+export function subscribeToSpaces(callback: (spaces: Space[]) => void): Unsubscribe {
   return onSnapshot(
-    query(collection(db, 'spaces'), where('isPublic', '==', true), orderBy('memberCount', 'desc')),
-    (snap) => callback(snap.docs.map(spaceFromDoc)),
-    (err) => {
-      onPermissionError(err)
-      onError?.(err)
-    }
+    query(collection(db, 'spaces'), where('isPublic', '==', true)),
+    (snap) => {
+      const spaces = snap.docs
+        .map(spaceFromDoc)
+        .sort((a, b) => b.memberCount - a.memberCount)
+      callback(spaces)
+    },
+    (err) => handleFirestoreError(err, 'subscribeToSpaces')
   )
-}
-
-export async function getSpace(spaceId: string): Promise<Space | null> {
-  try {
-    const snap = await getDoc(doc(db, 'spaces', spaceId))
-    if (!snap.exists()) return null
-    return spaceFromDoc(snap)
-  } catch (err: any) {
-    onPermissionError(err)
-    return null
-  }
 }
 
 export async function getSpaceBySlug(slug: string): Promise<Space | null> {
@@ -151,72 +134,39 @@ export async function getSpaceBySlug(slug: string): Promise<Space | null> {
     )
     if (snap.empty) return null
     return spaceFromDoc(snap.docs[0])
-  } catch (err: any) {
-    onPermissionError(err)
-    return null
-  }
+  } catch (err) { handleFirestoreError(err, 'getSpaceBySlug'); return null }
 }
 
 // ─── POSTS ────────────────────────────────────────────────────────────────────
-export async function getPosts(channelId: string, limitCount = 20): Promise<Post[]> {
-  try {
-    const snap = await getDocs(
-      query(
-        collection(db, 'posts'),
-        where('channelId', '==', channelId),
-        where('status', '==', 'published'),
-        orderBy('isPinned', 'desc'),
-        orderBy('createdAt', 'desc'),
-        limit(limitCount)
-      )
-    )
-    return snap.docs.map(postFromDoc)
-  } catch (err: any) {
-    onPermissionError(err)
-    return []
-  }
+// ⚠️ Sadece tek where — orderBy YOK → client-side filter + sort
+export function subscribeToPosts(channelId: string, callback: (posts: Post[]) => void): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, 'posts'), where('channelId', '==', channelId), limit(40)),
+    (snap) => {
+      const posts = snap.docs
+        .map(postFromDoc)
+        .filter(p => p.status === 'published')
+        .sort((a, b) => {
+          if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1
+          return b.createdAt.getTime() - a.createdAt.getTime()
+        })
+      callback(posts)
+    },
+    (err) => handleFirestoreError(err, 'subscribeToPosts')
+  )
 }
 
 export async function getRecentPostsForUser(spaceIds: string[], limitCount = 15): Promise<Post[]> {
-  if (spaceIds.length === 0) return []
+  if (!spaceIds.length) return []
   try {
-    const batch = spaceIds.slice(0, 10)
     const snap = await getDocs(
-      query(
-        collection(db, 'posts'),
-        where('spaceId', 'in', batch),
-        where('status', '==', 'published'),
-        orderBy('createdAt', 'desc'),
-        limit(limitCount)
-      )
+      query(collection(db, 'posts'), where('spaceId', 'in', spaceIds.slice(0, 10)), limit(limitCount))
     )
-    return snap.docs.map(postFromDoc)
-  } catch (err: any) {
-    onPermissionError(err)
-    return []
-  }
-}
-
-export function subscribeToPosts(
-  channelId: string,
-  callback: (posts: Post[]) => void,
-  onError?: (err: any) => void
-): Unsubscribe {
-  return onSnapshot(
-    query(
-      collection(db, 'posts'),
-      where('channelId', '==', channelId),
-      where('status', '==', 'published'),
-      orderBy('isPinned', 'desc'),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    ),
-    (snap) => callback(snap.docs.map(postFromDoc)),
-    (err) => {
-      onPermissionError(err)
-      onError?.(err)
-    }
-  )
+    return snap.docs
+      .map(postFromDoc)
+      .filter(p => p.status === 'published')
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+  } catch (err) { handleFirestoreError(err, 'getRecentPosts'); return [] }
 }
 
 export async function getPost(postId: string): Promise<Post | null> {
@@ -224,21 +174,13 @@ export async function getPost(postId: string): Promise<Post | null> {
     const snap = await getDoc(doc(db, 'posts', postId))
     if (!snap.exists()) return null
     return postFromDoc(snap)
-  } catch (err: any) {
-    onPermissionError(err)
-    return null
-  }
+  } catch (err) { handleFirestoreError(err, 'getPost'); return null }
 }
 
 export async function createPost(data: {
-  channelId: string
-  spaceId: string
-  author: Post['author']
-  title: string
-  content: string
-  tags: string[]
-  attachments: Post['attachments']
-  isAnnouncement: boolean
+  channelId: string; spaceId: string; author: Post['author']
+  title: string; content: string; tags: string[]
+  attachments: Post['attachments']; isAnnouncement: boolean
 }): Promise<string> {
   const ref = await addDoc(collection(db, 'posts'), {
     ...data,
@@ -250,20 +192,18 @@ export async function createPost(data: {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-
-  // Space'deki channel postCount'u artır (hata olursa post yine de oluştu)
   try {
-    const spaceRef = doc(db, 'spaces', data.spaceId)
+    const spaceRef  = doc(db, 'spaces', data.spaceId)
     const spaceSnap = await getDoc(spaceRef)
     if (spaceSnap.exists()) {
       const channels: Channel[] = spaceSnap.data().channels ?? []
-      const updated = channels.map((ch) =>
-        ch.id === data.channelId ? { ...ch, postCount: (ch.postCount ?? 0) + 1 } : ch
-      )
-      await updateDoc(spaceRef, { channels: updated })
+      await updateDoc(spaceRef, {
+        channels: channels.map(ch =>
+          ch.id === data.channelId ? { ...ch, postCount: (ch.postCount ?? 0) + 1 } : ch
+        ),
+      })
     }
   } catch { /* sessiz */ }
-
   return ref.id
 }
 
@@ -273,80 +213,78 @@ export async function incrementViewCount(postId: string) {
   } catch { /* sessiz */ }
 }
 
+// ─── BOOKMARKS ────────────────────────────────────────────────────────────────
+export async function getBookmarkedPosts(userId: string): Promise<Post[]> {
+  try {
+    const snap = await getDoc(doc(db, 'users', userId))
+    if (!snap.exists()) return []
+    const ids: string[] = snap.data().bookmarks ?? []
+    if (!ids.length) return []
+    const results = await Promise.all(ids.slice(0, 20).map(id => getPost(id)))
+    return results.filter(Boolean) as Post[]
+  } catch (err) { handleFirestoreError(err, 'getBookmarks'); return [] }
+}
+
+export async function toggleBookmark(userId: string, postId: string): Promise<boolean> {
+  try {
+    const ref       = doc(db, 'users', userId)
+    const snap      = await getDoc(ref)
+    const bookmarks: string[] = snap.exists() ? (snap.data().bookmarks ?? []) : []
+    const has       = bookmarks.includes(postId)
+    await updateDoc(ref, {
+      bookmarks: has ? bookmarks.filter(id => id !== postId) : [...bookmarks, postId],
+    })
+    return !has
+  } catch (err) { handleFirestoreError(err, 'toggleBookmark'); return false }
+}
+
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
-export function subscribeToNotifications(
-  userId: string,
-  callback: (notifs: Notification[]) => void,
-  onError?: (err: any) => void
-): Unsubscribe {
+// ⚠️ Sadece tek where — orderBy YOK → client-side sort
+export function subscribeToNotifications(userId: string, callback: (notifs: Notification[]) => void): Unsubscribe {
   return onSnapshot(
-    query(
-      collection(db, 'notifications'),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc'),
-      limit(30)
-    ),
-    (snap) => callback(snap.docs.map(notifFromDoc)),
-    (err) => {
-      onPermissionError(err)
-      onError?.(err)
-    }
+    query(collection(db, 'notifications'), where('userId', '==', userId), limit(30)),
+    (snap) => {
+      const notifs = snap.docs
+        .map(notifFromDoc)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      callback(notifs)
+    },
+    (err) => handleFirestoreError(err, 'subscribeToNotifications')
   )
 }
 
 export async function markNotificationRead(notifId: string) {
-  try {
-    await updateDoc(doc(db, 'notifications', notifId), { isRead: true })
-  } catch { /* sessiz */ }
+  try { await updateDoc(doc(db, 'notifications', notifId), { isRead: true }) } catch { /* sessiz */ }
 }
 
 export async function markAllNotificationsRead(userId: string) {
   try {
     const snap = await getDocs(
-      query(
-        collection(db, 'notifications'),
-        where('userId', '==', userId),
-        where('isRead', '==', false)
-      )
+      query(collection(db, 'notifications'), where('userId', '==', userId), where('isRead', '==', false))
     )
     const batch = writeBatch(db)
-    snap.docs.forEach((d) => batch.update(d.ref, { isRead: true }))
+    snap.docs.forEach(d => batch.update(d.ref, { isRead: true }))
     await batch.commit()
   } catch { /* sessiz */ }
 }
 
-export async function createNotification(data: Omit<Notification, 'id' | 'createdAt'>) {
-  await addDoc(collection(db, 'notifications'), {
-    ...data,
-    createdAt: serverTimestamp(),
-  })
-}
-
 // ─── COMMENTS ────────────────────────────────────────────────────────────────
-export function subscribeToComments(
-  postId: string,
-  callback: (comments: Comment[]) => void,
-  onError?: (err: any) => void
-): Unsubscribe {
+// ⚠️ Sadece tek where — orderBy YOK → client-side sort
+export function subscribeToComments(postId: string, callback: (comments: Comment[]) => void): Unsubscribe {
   return onSnapshot(
-    query(
-      collection(db, 'comments'),
-      where('postId', '==', postId),
-      orderBy('createdAt', 'asc')
-    ),
-    (snap) => callback(snap.docs.map(commentFromDoc)),
-    (err) => {
-      onPermissionError(err)
-      onError?.(err)
-    }
+    query(collection(db, 'comments'), where('postId', '==', postId), limit(50)),
+    (snap) => {
+      const comments = snap.docs
+        .map(commentFromDoc)
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      callback(comments)
+    },
+    (err) => handleFirestoreError(err, 'subscribeToComments')
   )
 }
 
 export async function createComment(data: {
-  postId: string
-  parentId?: string
-  author: Comment['author']
-  content: string
+  postId: string; parentId?: string; author: Comment['author']; content: string
 }): Promise<string> {
   const ref = await addDoc(collection(db, 'comments'), {
     ...data,
@@ -355,8 +293,6 @@ export async function createComment(data: {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  try {
-    await updateDoc(doc(db, 'posts', data.postId), { commentCount: increment(1) })
-  } catch { /* sessiz */ }
+  try { await updateDoc(doc(db, 'posts', data.postId), { commentCount: increment(1) }) } catch { /* sessiz */ }
   return ref.id
 }

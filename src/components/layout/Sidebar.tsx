@@ -1,7 +1,8 @@
+// src/components/layout/Sidebar.tsx
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn, CHANNEL_META } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { useSpaces } from '@/hooks/useSpaces'
@@ -10,13 +11,316 @@ import { useAuthStore } from '@/store/authStore'
 import { useNotifications } from '@/hooks/useNotifications'
 import { logoutUser } from '@/lib/auth'
 import {
-  Bell, Settings, ChevronDown, ChevronRight,
-  Search, Plus, Home, Bookmark, Users, X, LogOut,
+  Bell, ChevronDown, ChevronRight, Search, Plus,
+  Home, Bookmark, Users, X, LogOut, Settings,
+  Info, BookOpen, Shield, Mail, FileText, Hash,
 } from 'lucide-react'
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Space } from '@/types'
 
+// ─── Statik sayfalar (her zaman aranabilir) ──────────────────────────────────
+const STATIC_PAGES = [
+  { label: 'Ana Sayfa',        href: '/dashboard',                icon: Home,     category: 'Sayfa', keywords: ['anasayfa', 'dashboard', 'panel'] },
+  { label: 'Bildirimler',      href: '/dashboard/notifications',  icon: Bell,     category: 'Sayfa', keywords: ['bildirim', 'notification'] },
+  { label: 'Kaydedilenler',    href: '/dashboard/bookmarks',      icon: Bookmark, category: 'Sayfa', keywords: ['kaydet', 'bookmark', 'favori'] },
+  { label: 'Topluluklar',      href: '/dashboard/spaces',         icon: Users,    category: 'Sayfa', keywords: ['topluluk', 'space', 'bölüm'] },
+  { label: 'Profil & Ayarlar', href: '/dashboard/settings',       icon: Settings, category: 'Sayfa', keywords: ['profil', 'ayar', 'şifre', 'hesap', 'setting'] },
+  { label: 'Hakkımızda',       href: '/about',                    icon: Info,     category: 'Bilgi', keywords: ['hakkında', 'about', 'nedir', 'kim'] },
+  { label: 'Kullanım Kılavuzu',href: '/guide',                    icon: BookOpen, category: 'Bilgi', keywords: ['kılavuz', 'nasıl', 'guide', 'yardım', 'help'] },
+  { label: 'Gizlilik Politikası', href: '/privacy',               icon: Shield,   category: 'Bilgi', keywords: ['gizlilik', 'kvkk', 'privacy', 'politika'] },
+  { label: 'Bize Ulaşın',      href: '/contact',                  icon: Mail,     category: 'Bilgi', keywords: ['iletişim', 'şikayet', 'contact', 'geri bildirim', 'feedback'] },
+]
+
+type SearchResult =
+  | { kind: 'page';    label: string; href: string; icon: any; category: string }
+  | { kind: 'channel'; label: string; href: string; spaceName: string; spaceEmoji: string; channelType: string; category: string }
+
+function buildResults(query: string, spaces: Space[]): SearchResult[] {
+  if (!query.trim()) return []
+  const q = query.toLowerCase().trim()
+
+  const results: SearchResult[] = []
+
+  // 1. Statik sayfalar
+  STATIC_PAGES.forEach(page => {
+    const hit =
+      page.label.toLowerCase().includes(q) ||
+      page.keywords.some(k => k.includes(q))
+    if (hit) results.push({ kind: 'page', label: page.label, href: page.href, icon: page.icon, category: page.category })
+  })
+
+  // 2. Topluluklar
+  spaces.forEach(space => {
+    const spaceMatch = space.name.toLowerCase().includes(q) || space.description?.toLowerCase().includes(q)
+
+    // Topluluk eşleşiyorsa ilk kanalına git
+    if (spaceMatch) {
+      const firstCh = space.channels[0]
+      if (firstCh) {
+        results.push({
+          kind: 'channel',
+          label: space.name,
+          href: `/dashboard/spaces/${space.slug}/${firstCh.slug}`,
+          spaceName: space.name,
+          spaceEmoji: space.iconEmoji,
+          channelType: firstCh.type,
+          category: 'Topluluk',
+        })
+      }
+    }
+
+    // 3. Kanallar
+    space.channels.forEach(ch => {
+      const chMatch =
+        ch.name.toLowerCase().includes(q) ||
+        CHANNEL_META[ch.type]?.label?.toLowerCase().includes(q)
+      if (chMatch && !spaceMatch) {
+        results.push({
+          kind: 'channel',
+          label: ch.name,
+          href: `/dashboard/spaces/${space.slug}/${ch.slug}`,
+          spaceName: space.name,
+          spaceEmoji: space.iconEmoji,
+          channelType: ch.type,
+          category: 'Kanal',
+        })
+      }
+    })
+  })
+
+  return results.slice(0, 10)
+}
+
+// ─── Arama overlay ────────────────────────────────────────────────────────────
+interface SearchOverlayProps {
+  spaces: Space[]
+  onClose: () => void
+}
+
+function SearchOverlay({ spaces, onClose }: SearchOverlayProps) {
+  const router  = useRouter()
+  const [query, setQuery]       = useState('')
+  const [active, setActive]     = useState(0)  // klavye cursor
+  const inputRef = useRef<HTMLInputElement>(null)
+  const listRef  = useRef<HTMLUListElement>(null)
+
+  const results = buildResults(query, spaces)
+
+  // Input'a odaklan
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  // Active item değişince scroll et
+  useEffect(() => {
+    const el = listRef.current?.children[active] as HTMLElement | undefined
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [active])
+
+  function navigate(href: string) {
+    router.push(href)
+    onClose()
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape') { onClose(); return }
+    if (results.length === 0) return
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setActive(a => Math.min(a + 1, results.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActive(a => Math.max(a - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      navigate(results[active].href)
+    }
+  }
+
+  // Query değişince cursor'u sıfırla
+  useEffect(() => { setActive(0) }, [query])
+
+  // Kategori grupları
+  const grouped = results.reduce<Record<string, SearchResult[]>>((acc, r) => {
+    if (!acc[r.category]) acc[r.category] = []
+    acc[r.category].push(r)
+    return acc
+  }, {})
+
+  // Sıralı kategoriler
+  const categoryOrder = ['Sayfa', 'Topluluk', 'Kanal', 'Bilgi']
+  const sortedCategories = Object.keys(grouped).sort(
+    (a, b) => categoryOrder.indexOf(a) - categoryOrder.indexOf(b)
+  )
+
+  // Tüm results düz liste (index için)
+  let flatIdx = 0
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-[14vh] px-4"
+      onClick={onClose}
+    >
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
+      {/* Kutu */}
+      <div
+        className="relative w-full max-w-[560px] shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="bg-[#111827] border border-surface-border rounded-2xl overflow-hidden">
+
+          {/* Input */}
+          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-surface-border">
+            <Search className="w-4 h-4 text-text-muted shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Sayfa, kanal veya topluluk ara..."
+              className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted outline-none"
+            />
+            <div className="flex items-center gap-1.5 shrink-0">
+              <kbd className="text-2xs bg-surface px-1.5 py-0.5 rounded border border-surface-border font-mono text-text-muted">ESC</kbd>
+              <button onClick={onClose} className="text-text-muted hover:text-text-secondary transition-colors p-0.5">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Boş state — ipuçları */}
+          {!query && (
+            <div className="px-4 py-5">
+              <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider mb-3">Hızlı Erişim</p>
+              <ul className="space-y-0.5">
+                {STATIC_PAGES.slice(0, 5).map(page => {
+                  const Icon = page.icon
+                  return (
+                    <li key={page.href}>
+                      <button
+                        onClick={() => navigate(page.href)}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface transition-colors text-left"
+                      >
+                        <div className="w-7 h-7 rounded-lg bg-surface border border-surface-border flex items-center justify-center shrink-0">
+                          <Icon className="w-3.5 h-3.5 text-text-muted" />
+                        </div>
+                        <span className="text-sm text-text-secondary">{page.label}</span>
+                        <span className="ml-auto text-2xs text-text-muted">{page.category}</span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+
+          {/* Sonuçlar */}
+          {query && (
+            <>
+              {results.length === 0 ? (
+                <div className="px-4 py-8 text-center">
+                  <div className="text-2xl mb-2">🔍</div>
+                  <p className="text-sm text-text-secondary font-medium">"{query}" için sonuç bulunamadı</p>
+                  <p className="text-xs text-text-muted mt-1">Farklı kelimeler deneyin</p>
+                </div>
+              ) : (
+                <ul ref={listRef} className="py-2 max-h-80 overflow-y-auto">
+                  {sortedCategories.map(cat => (
+                    <li key={cat}>
+                      {/* Kategori başlığı */}
+                      <div className="px-4 py-1.5">
+                        <span className="text-2xs font-semibold text-text-muted uppercase tracking-wider">{cat}</span>
+                      </div>
+                      {grouped[cat].map(result => {
+                        const currentIdx = flatIdx++
+                        const isActive   = currentIdx === active
+
+                        if (result.kind === 'page') {
+                          const Icon = result.icon
+                          return (
+                            <button
+                              key={result.href}
+                              onClick={() => navigate(result.href)}
+                              onMouseEnter={() => setActive(currentIdx)}
+                              className={cn(
+                                'w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left',
+                                isActive ? 'bg-brand/10' : 'hover:bg-surface'
+                              )}
+                            >
+                              <div className={cn(
+                                'w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 transition-colors',
+                                isActive ? 'bg-brand/10 border-brand/30' : 'bg-surface border-surface-border'
+                              )}>
+                                <Icon className={cn('w-3.5 h-3.5', isActive ? 'text-brand' : 'text-text-muted')} />
+                              </div>
+                              <span className={cn('text-sm flex-1', isActive ? 'text-text-primary' : 'text-text-secondary')}>
+                                {result.label}
+                              </span>
+                              {isActive && (
+                                <kbd className="text-2xs bg-surface px-1.5 py-0.5 rounded border border-surface-border font-mono text-text-muted shrink-0">
+                                  ↵
+                                </kbd>
+                              )}
+                            </button>
+                          )
+                        }
+
+                        // Channel result
+                        const meta = CHANNEL_META[result.channelType]
+                        return (
+                          <button
+                            key={result.href}
+                            onClick={() => navigate(result.href)}
+                            onMouseEnter={() => setActive(currentIdx)}
+                            className={cn(
+                              'w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left',
+                              isActive ? 'bg-brand/10' : 'hover:bg-surface'
+                            )}
+                          >
+                            <div className={cn(
+                              'w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0',
+                              meta?.bgClass ?? 'bg-surface'
+                            )}>
+                              {meta?.icon ?? '#'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className={cn('text-sm block truncate', isActive ? 'text-text-primary' : 'text-text-secondary')}>
+                                {result.label}
+                              </span>
+                              <span className="text-2xs text-text-muted">
+                                {result.spaceEmoji} {result.spaceName}
+                              </span>
+                            </div>
+                            {isActive && (
+                              <kbd className="text-2xs bg-surface px-1.5 py-0.5 rounded border border-surface-border font-mono text-text-muted shrink-0">
+                                ↵
+                              </kbd>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+
+          {/* Footer */}
+          <div className="px-4 py-2.5 border-t border-surface-border flex items-center gap-4 text-2xs text-text-muted">
+            <span className="flex items-center gap-1"><kbd className="font-mono bg-surface border border-surface-border px-1 rounded">↑↓</kbd> Gezin</span>
+            <span className="flex items-center gap-1"><kbd className="font-mono bg-surface border border-surface-border px-1 rounded">↵</kbd> Aç</span>
+            <span className="flex items-center gap-1"><kbd className="font-mono bg-surface border border-surface-border px-1 rounded">ESC</kbd> Kapat</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Space section ────────────────────────────────────────────────────────────
 function SpaceSection({ space, isActive, onNavigate }: {
   space: Space; isActive: boolean; onNavigate?: () => void
 }) {
@@ -24,46 +328,40 @@ function SpaceSection({ space, isActive, onNavigate }: {
   const [isOpen, setIsOpen] = useState(isActive)
 
   return (
-    <div className="mb-1">
+    <div className="mb-0.5">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'w-full flex items-center gap-2 px-3 py-2 rounded text-sm font-medium transition-all duration-150',
-          'hover:bg-surface text-text-secondary hover:text-text-primary',
-          isActive && 'text-text-primary'
+          'w-full flex items-center gap-2 px-3 py-1.5 rounded text-xs font-semibold uppercase tracking-wider transition-all',
+          'hover:bg-surface text-text-muted hover:text-text-secondary',
+          isActive && 'text-text-secondary'
         )}
       >
-        <span className="text-base leading-none">{space.iconEmoji}</span>
-        <span className="flex-1 text-left truncate text-xs uppercase tracking-wider font-semibold">
-          {space.name}
-        </span>
-        {isOpen
-          ? <ChevronDown className="w-3 h-3 text-text-muted" />
-          : <ChevronRight className="w-3 h-3 text-text-muted" />
-        }
+        <span className="text-sm leading-none">{space.iconEmoji}</span>
+        <span className="flex-1 text-left truncate">{space.name}</span>
+        {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
       </button>
 
       {isOpen && (
         <div className="ml-2 mt-0.5 space-y-0.5">
-          {space.channels.map((channel) => {
-            const meta = CHANNEL_META[channel.type]
-            const href = `/dashboard/spaces/${space.slug}/${channel.slug}`
-            const isChannelActive = pathname === href
-
+          {space.channels.map(channel => {
+            const meta   = CHANNEL_META[channel.type]
+            const href   = `/dashboard/spaces/${space.slug}/${channel.slug}`
+            const active = pathname === href
             return (
               <Link
                 key={channel.id}
                 href={href}
                 onClick={onNavigate}
-                className={cn('sidebar-item pl-4 text-xs', isChannelActive && 'active')}
+                className={cn('sidebar-item pl-4 text-xs', active && 'active')}
               >
                 <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', {
-                  'bg-accent-amber':       channel.type === 'announcement',
-                  'bg-accent-green':       channel.type === 'academic',
-                  'bg-accent-purple':      channel.type === 'archive',
-                  'bg-accent-red':         channel.type === 'listing',
-                  'bg-channel-suggestion': channel.type === 'suggestion',
-                  'bg-brand':              channel.type === 'social',
+                  'bg-accent-amber':  channel.type === 'announcement',
+                  'bg-accent-green':  channel.type === 'academic',
+                  'bg-accent-purple': channel.type === 'archive',
+                  'bg-accent-red':    channel.type === 'listing',
+                  'bg-brand':         channel.type === 'social',
+                  'bg-text-muted':    channel.type === 'suggestion',
                 })} />
                 <span className="flex-1 truncate">{meta.icon} {channel.name}</span>
                 {channel.postCount > 0 && (
@@ -78,20 +376,35 @@ function SpaceSection({ space, isActive, onNavigate }: {
   )
 }
 
-interface SidebarProps {
-  onClose?: () => void
-}
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+interface SidebarProps { onClose?: () => void }
 
 export function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname()
   const router   = useRouter()
+  const [searchOpen, setSearchOpen] = useState(false)
+
   const { spaces, isLoading } = useSpaces()
-  const { profile }           = useUserProfile()
+  const { profile }            = useUserProfile()
   const { user: firebaseUser } = useAuthStore()
-  const { unreadCount }       = useNotifications()
+  const { unreadCount }        = useNotifications()
 
   const displayName = profile?.displayName ?? firebaseUser?.displayName ?? 'Kullanıcı'
   const department  = profile?.department ?? ''
+
+  // ─── Ctrl+K / ⌘K global kısayol ──────────────────────────────────────────
+  const openSearch = useCallback(() => setSearchOpen(true), [])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        openSearch()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [openSearch])
 
   async function handleLogout() {
     await logoutUser()
@@ -99,113 +412,135 @@ export function Sidebar({ onClose }: SidebarProps) {
   }
 
   const topItems = [
-    { label: 'Ana Sayfa',    href: '/dashboard',               icon: Home },
-    { label: 'Bildirimler',  href: '/dashboard/notifications',  icon: Bell, badge: unreadCount },
-    { label: 'Kaydedilenler',href: '/dashboard/bookmarks',      icon: Bookmark },
-    { label: 'Topluluklar',  href: '/dashboard/spaces',         icon: Users },
+    { label: 'Ana Sayfa',     href: '/dashboard',              icon: Home },
+    { label: 'Bildirimler',   href: '/dashboard/notifications', icon: Bell,     badge: unreadCount },
+    { label: 'Kaydedilenler', href: '/dashboard/bookmarks',     icon: Bookmark },
+    { label: 'Topluluklar',   href: '/dashboard/spaces',        icon: Users },
   ]
 
   return (
-    <aside className="flex h-screen w-[240px] shrink-0 flex-col bg-background-secondary border-r border-surface-border">
-      {/* Logo + Mobile Close */}
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-surface-border">
-        <div className="w-7 h-7 rounded bg-brand flex items-center justify-center shrink-0">
-          <span className="text-white font-display font-bold text-sm">O</span>
-        </div>
-        <div className="flex-1">
-          <div className="font-display font-semibold text-sm text-text-primary leading-none">OpenUni</div>
-          <div className="text-2xs text-text-muted mt-0.5">IGÜ Platformu</div>
-        </div>
-        {onClose && (
-          <button onClick={onClose} className="p-1 rounded hover:bg-surface text-text-muted hover:text-text-secondary transition-colors">
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
+    <>
+      {/* Arama overlay — spaces'ı geçir ki kanal araması çalışsın */}
+      {searchOpen && (
+        <SearchOverlay
+          spaces={spaces}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
 
-      {/* Search */}
-      <div className="px-3 py-3 border-b border-surface-border">
-        <button className="w-full flex items-center gap-2 px-3 py-2 rounded bg-surface border border-surface-border text-text-muted text-xs hover:border-brand/40 hover:text-text-secondary transition-all">
-          <Search className="w-3.5 h-3.5" />
-          <span>Ara...</span>
-          <kbd className="ml-auto text-2xs bg-background px-1.5 py-0.5 rounded border border-surface-border font-mono">⌘K</kbd>
-        </button>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
-        {/* Top nav */}
-        <div className="space-y-0.5">
-          {topItems.map((item) => {
-            const Icon = item.icon
-            const isActive = pathname === item.href
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn('sidebar-item', isActive && 'active')}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span className="flex-1">{item.label}</span>
-                {item.badge && item.badge > 0 && (
-                  <span className="bg-brand text-white text-2xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                    {item.badge}
-                  </span>
-                )}
-              </Link>
-            )
-          })}
-        </div>
-
-        <div className="divider" />
-
-        {/* Spaces */}
-        <div>
-          <div className="flex items-center justify-between px-3 mb-2">
-            <span className="text-2xs font-semibold text-text-muted uppercase tracking-wider">Toplulukların</span>
-            <button className="text-text-muted hover:text-text-primary transition-colors">
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+      <aside className="flex h-screen w-[240px] shrink-0 flex-col bg-background-secondary border-r border-surface-border">
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-4 py-4 border-b border-surface-border">
+          <div className="w-7 h-7 rounded bg-brand flex items-center justify-center shrink-0">
+            <span className="text-white font-display font-bold text-sm">O</span>
           </div>
-          {isLoading ? (
-            <div className="px-3 py-2 space-y-2">
-              {[1,2,3].map(i => (
-                <div key={i} className="h-7 bg-surface rounded animate-pulse" />
-              ))}
+          <div className="flex-1">
+            <div className="font-display font-semibold text-sm text-text-primary leading-none">OpenUni</div>
+            <div className="text-2xs text-text-muted mt-0.5">IGÜ Platformu</div>
+          </div>
+          {onClose && (
+            <button onClick={onClose} className="p-1 rounded hover:bg-surface text-text-muted hover:text-text-secondary transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Arama butonu */}
+        <div className="px-3 py-3 border-b border-surface-border">
+          <button
+            onClick={openSearch}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-surface border border-surface-border text-text-muted text-xs hover:border-brand/40 hover:text-text-secondary transition-all group"
+          >
+            <Search className="w-3.5 h-3.5 group-hover:text-brand transition-colors" />
+            <span className="flex-1 text-left">Ara...</span>
+            <div className="flex items-center gap-0.5 shrink-0">
+              <kbd className="text-2xs bg-background-secondary px-1.5 py-0.5 rounded border border-surface-border font-mono leading-tight">
+                {typeof window !== 'undefined' && navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}
+              </kbd>
+              <kbd className="text-2xs bg-background-secondary px-1.5 py-0.5 rounded border border-surface-border font-mono leading-tight">K</kbd>
             </div>
-          ) : (
-            <div className="space-y-0.5">
-              {spaces.map((space) => (
+          </button>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
+          <div className="space-y-0.5">
+            {topItems.map(item => {
+              const Icon   = item.icon
+              const active = pathname === item.href
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onClose}
+                  className={cn('sidebar-item', active && 'active')}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="flex-1">{item.label}</span>
+                  {item.badge != null && item.badge > 0 && (
+                    <span className="bg-brand text-white text-2xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none">
+                      {item.badge}
+                    </span>
+                  )}
+                </Link>
+              )
+            })}
+          </div>
+
+          <div className="divider" />
+
+          {/* Spaces */}
+          <div>
+            <div className="flex items-center justify-between px-3 mb-2">
+              <span className="text-2xs font-semibold text-text-muted uppercase tracking-wider">Toplulukların</span>
+              <button className="text-text-muted hover:text-text-primary transition-colors p-0.5">
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            {isLoading ? (
+              <div className="px-3 space-y-2">
+                {[1, 2, 3].map(i => <div key={i} className="h-7 bg-surface rounded animate-pulse" />)}
+              </div>
+            ) : (
+              spaces.map(space => (
                 <SpaceSection
                   key={space.id}
                   space={space}
                   isActive={pathname.includes(space.slug)}
                   onNavigate={onClose}
                 />
-              ))}
-            </div>
-          )}
-        </div>
-      </nav>
-
-      {/* User Footer */}
-      <div className="p-3 border-t border-surface-border">
-        <div className="flex items-center gap-2.5 px-2 py-2 rounded hover:bg-surface cursor-pointer transition-colors group">
-          <Avatar name={displayName} size="sm" />
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium text-text-primary truncate">{displayName}</div>
-            <div className="text-2xs text-text-muted truncate">{department}</div>
+              ))
+            )}
           </div>
-          <button
-            onClick={handleLogout}
-            title="Çıkış Yap"
-            className="text-text-muted hover:text-accent-red transition-colors shrink-0"
+        </nav>
+
+        {/* Footer */}
+        <div className="p-3 border-t border-surface-border space-y-1">
+          <Link
+            href="/dashboard/settings"
+            onClick={onClose}
+            className={cn('sidebar-item', pathname === '/dashboard/settings' && 'active')}
           >
-            <LogOut className="w-3.5 h-3.5" />
-          </button>
+            <Settings className="w-4 h-4 shrink-0" />
+            <span className="flex-1">Profil & Ayarlar</span>
+          </Link>
+
+          <div className="flex items-center gap-2.5 px-2 py-2 rounded hover:bg-surface transition-colors">
+            <Avatar name={displayName} size="sm" />
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-text-primary truncate">{displayName}</div>
+              <div className="text-2xs text-text-muted truncate">{department || 'Öğrenci'}</div>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Çıkış Yap"
+              className="p-1 text-text-muted hover:text-accent-red transition-colors shrink-0"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   )
 }

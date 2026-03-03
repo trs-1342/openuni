@@ -202,6 +202,14 @@ export default function LoginPage() {
               Kayıt Ol
             </Link>
           </p>
+
+          {/* Footer linkleri */}
+          <div className="flex items-center justify-center gap-4 mt-8 pt-6 border-t border-surface-border">
+            <Link href="/about"   className="text-2xs text-text-muted hover:text-text-secondary transition-colors">Hakkımızda</Link>
+            <Link href="/guide"   className="text-2xs text-text-muted hover:text-text-secondary transition-colors">Kılavuz</Link>
+            <Link href="/privacy" className="text-2xs text-text-muted hover:text-text-secondary transition-colors">Gizlilik</Link>
+            <Link href="/contact" className="text-2xs text-text-muted hover:text-text-secondary transition-colors">İletişim</Link>
+          </div>
         </div>
       </div>
     </div>

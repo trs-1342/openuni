@@ -1,0 +1,716 @@
+// src/app/dashboard/settings/page.tsx
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Sidebar } from '@/components/layout/Sidebar'
+import { Avatar } from '@/components/ui/Avatar'
+import { useUserProfile } from '@/hooks/useUserProfile'
+import { useAuthStore } from '@/store/authStore'
+import { updateUserProfile } from '@/lib/firestore'
+import { changePassword, logoutUser, downloadMyData, resendVerificationEmail } from '@/lib/auth'
+import { updateProfile, sendEmailVerification, reload } from 'firebase/auth'
+import { auth } from '@/lib/firebase'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import {
+  User, GraduationCap, Mail, Shield, LogOut,
+  Save, CheckCircle, AlertCircle, Menu, Clock,
+  Lock, Eye, EyeOff, Download, RefreshCw, ShieldCheck,
+  ChevronRight, Info, BookOpen, FileText, ExternalLink,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+const DEPARTMENTS = [
+  // Mühendislik
+  'Bilgisayar Mühendisliği',
+  'Yazılım Mühendisliği',
+  'Elektrik-Elektronik Mühendisliği',
+  'Makine Mühendisliği',
+  'Endüstri Mühendisliği',
+  'İnşaat Mühendisliği',
+  'Mekatronik Mühendisliği',
+  'Uçak Mühendisliği',
+  'Havacılık ve Uzay Mühendisliği',
+
+  // Mimarlık ve Tasarım
+  'Mimarlık',
+  'İç Mimarlık',
+  'İç Mimarlık ve Çevre Tasarımı',
+  'Grafik Tasarım',
+  'Görsel İletişim Tasarımı',
+  'Yeni Medya ve İletişim',
+  'Radyo, Televizyon ve Sinema',
+
+  // Sağlık
+  'Hemşirelik',
+  'Fizyoterapi ve Rehabilitasyon',
+  'Beslenme ve Diyetetik',
+  'Çocuk Gelişimi',
+  'Odyoloji',
+  'Dil ve Konuşma Terapisi',
+  'Sağlık Yönetimi',
+
+  // Sosyal ve İdari Bilimler
+  'İşletme',
+  'Uluslararası Ticaret ve Finansman',
+  'Uluslararası Ticaret ve İşletmecilik',
+  'Siyaset Bilimi ve Uluslararası İlişkiler',
+  'Psikoloji',
+  'Sosyoloji',
+  'Halkla İlişkiler ve Reklamcılık',
+  'Reklamcılık',
+
+  // Hukuk
+  'Hukuk',
+
+  // Spor
+  'Antrenörlük Eğitimi',
+  'Spor Yöneticiliği',
+  'Rekreasyon',
+
+  // Havacılık
+  'Uçak Bakım ve Onarım',
+  'Havacılık Yönetimi',
+  'Pilotaj',
+  'Sivil Hava Ulaştırma İşletmeciliği',
+
+  // Ön Lisans (Meslek Yüksekokulu)
+  'Bilgisayar Programcılığı',
+  'Bilgi Güvenliği Teknolojisi',
+  'Web Tasarımı ve Kodlama',
+  'Grafik Tasarımı',
+  'Adalet',
+  'Bankacılık ve Sigortacılık',
+  'Dış Ticaret',
+  'Lojistik',
+  'Turizm ve Otel İşletmeciliği',
+  'Aşçılık',
+  'Sivil Hava Ulaştırma İşletmeciliği (MYO)',
+  'Uçak Teknolojisi',
+  'Uçuş Harekat Yöneticiliği',
+  'Sağlık Kurumları İşletmeciliği',
+  'Tıbbi Dokümantasyon ve Sekreterlik',
+  'Tıbbi Görüntüleme Teknikleri',
+  'İlk ve Acil Yardım',
+  'Ameliyathane Hizmetleri',
+  'Anestezi',
+
+  'Diğer'
+];
+
+// ─── Şifre Değiştirme Panel ────────────────────────────────────────────────
+function ChangePasswordSection() {
+  const [current, setCurrent]     = useState('')
+  const [next, setNext]           = useState('')
+  const [confirm, setConfirm]     = useState('')
+  const [showCurrent, setShowCurrent] = useState(false)
+  const [showNext, setShowNext]   = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [success, setSuccess]     = useState(false)
+  const [error, setError]         = useState('')
+
+  const passwordsMatch = next === confirm && next.length >= 6
+  const canSubmit = current && passwordsMatch && !isLoading
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!canSubmit) return
+    if (next !== confirm) { setError('Yeni şifreler eşleşmiyor.'); return }
+    if (next.length < 6) { setError('Şifre en az 6 karakter olmalı.'); return }
+
+    setIsLoading(true)
+    setError('')
+    try {
+      await changePassword(current, next)
+      setSuccess(true)
+      setCurrent(''); setNext(''); setConfirm('')
+      setTimeout(() => setSuccess(false), 4000)
+    } catch (err: any) {
+      const msg = err?.code === 'auth/wrong-password' || err?.code === 'auth/invalid-credential'
+        ? 'Mevcut şifre hatalı.'
+        : err?.code === 'auth/requires-recent-login'
+        ? 'Güvenlik nedeniyle yeniden giriş yapmanız gerekiyor.'
+        : 'Şifre değiştirilemedi. Tekrar deneyin.'
+      setError(msg)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <div className="card space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Mevcut şifre */}
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">Mevcut Şifre</label>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <input
+              type={showCurrent ? 'text' : 'password'}
+              value={current}
+              onChange={e => { setCurrent(e.target.value); setError('') }}
+              placeholder="••••••••"
+              className="input pl-10 pr-10"
+              autoComplete="current-password"
+            />
+            <button type="button" onClick={() => setShowCurrent(!showCurrent)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors">
+              {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Yeni şifre */}
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">Yeni Şifre</label>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <input
+              type={showNext ? 'text' : 'password'}
+              value={next}
+              onChange={e => { setNext(e.target.value); setError('') }}
+              placeholder="En az 6 karakter"
+              className={cn(
+                'input pl-10 pr-10',
+                next && next.length < 6 && 'border-accent-red/50',
+                next && next.length >= 6 && 'border-accent-green/50',
+              )}
+              autoComplete="new-password"
+            />
+            <button type="button" onClick={() => setShowNext(!showNext)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors">
+              {showNext ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          {next && next.length < 6 && (
+            <p className="text-2xs text-accent-red mt-1">En az 6 karakter gerekli</p>
+          )}
+        </div>
+
+        {/* Yeni şifre tekrar */}
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">Yeni Şifre Tekrar</label>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <input
+              type="password"
+              value={confirm}
+              onChange={e => { setConfirm(e.target.value); setError('') }}
+              placeholder="••••••••"
+              className={cn(
+                'input pl-10',
+                confirm && next !== confirm && 'border-accent-red/50',
+                confirm && next === confirm && next.length >= 6 && 'border-accent-green/50',
+              )}
+              autoComplete="new-password"
+            />
+          </div>
+          {confirm && next !== confirm && (
+            <p className="text-2xs text-accent-red mt-1">Şifreler eşleşmiyor</p>
+          )}
+        </div>
+
+        {error && (
+          <div className="flex items-center gap-2 text-xs text-accent-red bg-accent-red/10 border border-accent-red/20 rounded px-3 py-2.5">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="flex items-center gap-2 text-xs text-accent-green bg-accent-green/10 border border-accent-green/20 rounded px-3 py-2.5">
+            <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+            Şifre başarıyla değiştirildi!
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className={cn(
+            'btn-primary text-sm px-5 py-2 flex items-center gap-2',
+            !canSubmit && 'opacity-50 cursor-not-allowed'
+          )}
+        >
+          {isLoading
+            ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            : <Lock className="w-3.5 h-3.5" />
+          }
+          Şifreyi Güncelle
+        </button>
+      </form>
+    </div>
+  )
+}
+
+// ─── Email Oturum Doğrulaması ──────────────────────────────────────────────
+function EmailVerificationSection() {
+  const { user } = useAuthStore()
+  const [isSending, setIsSending] = useState(false)
+  const [isChecking, setIsChecking] = useState(false)
+  const [sent, setSent]           = useState(false)
+  const [cooldown, setCooldown]   = useState(0)
+  const [verified, setVerified]   = useState(user?.emailVerified ?? false)
+  const [error, setError]         = useState('')
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const t = setTimeout(() => setCooldown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [cooldown])
+
+  async function handleSendCode() {
+    setIsSending(true)
+    setError('')
+    try {
+      await resendVerificationEmail()
+      setSent(true)
+      setCooldown(60)
+      setTimeout(() => setSent(false), 5000)
+    } catch (err: any) {
+      setError('E-posta gönderilemedi. Tekrar deneyin.')
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  async function handleCheck() {
+    setIsChecking(true)
+    setError('')
+    try {
+      const u = auth.currentUser
+      if (!u) { setError('Oturum bulunamadı.'); return }
+      await reload(u)
+      if (u.emailVerified) {
+        setVerified(true)
+      } else {
+        setError('E-posta henüz doğrulanmamış. Gelen kutunu kontrol et.')
+      }
+    } catch {
+      setError('Kontrol sırasında hata oluştu.')
+    } finally {
+      setIsChecking(false)
+    }
+  }
+
+  if (verified) {
+    return (
+      <div className="card">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-accent-green/10 border border-accent-green/20 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-4 h-4 text-accent-green" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-text-primary">E-posta Doğrulandı</p>
+            <p className="text-xs text-text-muted mt-0.5">Hesabın e-posta ile doğrulanmış durumda.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="card space-y-4">
+      <div className="flex items-start gap-3 p-3 rounded-lg bg-accent-amber/5 border border-accent-amber/20">
+        <AlertCircle className="w-4 h-4 text-accent-amber mt-0.5 shrink-0" />
+        <div>
+          <p className="text-sm font-medium text-text-primary">E-posta Doğrulanmamış</p>
+          <p className="text-xs text-text-muted mt-0.5">
+            Hesabın tam olarak aktif olmak için e-postanı doğrula. Doğrulama bağlantısı gönderebiliriz.
+          </p>
+        </div>
+      </div>
+
+      {sent && (
+        <div className="flex items-center gap-2 text-xs text-accent-green bg-accent-green/10 border border-accent-green/20 rounded px-3 py-2.5">
+          <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+          Doğrulama e-postası gönderildi! Gelen kutunu kontrol et.
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-accent-red bg-accent-red/10 border border-accent-red/20 rounded px-3 py-2.5">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          {error}
+        </div>
+      )}
+
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={handleSendCode}
+          disabled={isSending || cooldown > 0}
+          className={cn(
+            'btn-secondary text-xs flex items-center gap-1.5 px-4 py-2',
+            (isSending || cooldown > 0) && 'opacity-60 cursor-not-allowed'
+          )}
+        >
+          {isSending
+            ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            : <Mail className="w-3.5 h-3.5" />
+          }
+          {cooldown > 0 ? `Tekrar Gönder (${cooldown}s)` : 'Doğrulama E-postası Gönder'}
+        </button>
+
+        <button
+          onClick={handleCheck}
+          disabled={isChecking}
+          className={cn('btn-ghost text-xs flex items-center gap-1.5 px-3 py-2', isChecking && 'opacity-60')}
+        >
+          {isChecking
+            ? <div className="w-3 h-3 border-2 border-brand/30 border-t-brand rounded-full animate-spin" />
+            : <RefreshCw className="w-3.5 h-3.5" />
+          }
+          Doğrulandı mı kontrol et
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Ana Sayfa ─────────────────────────────────────────────────────────────
+export default function SettingsPage() {
+  const router  = useRouter()
+  const { user: firebaseUser } = useAuthStore()
+  const { profile, isLoading }  = useUserProfile()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [activeTab, setActiveTab]   = useState<'profile' | 'security' | 'data'>('profile')
+
+  const [displayName, setDisplayName] = useState('')
+  const [department,  setDepartment]  = useState('')
+  const [grade,       setGrade]       = useState('')
+  const [isSaving,    setIsSaving]    = useState(false)
+  const [saved,       setSaved]       = useState(false)
+  const [profileError, setProfileError] = useState('')
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  useEffect(() => {
+    if (profile) {
+      setDisplayName(profile.displayName ?? '')
+      setDepartment(profile.department ?? '')
+      setGrade(profile.grade?.toString() ?? '')
+    }
+  }, [profile])
+
+  async function handleSaveProfile(e: React.FormEvent) {
+    e.preventDefault()
+    if (!firebaseUser) return
+    if (!displayName.trim()) { setProfileError('Ad soyad boş olamaz.'); return }
+    setIsSaving(true)
+    setProfileError('')
+    try {
+      await updateUserProfile(firebaseUser.uid, {
+        displayName: displayName.trim(),
+        department,
+        grade: grade ? parseInt(grade) : null,
+      })
+      await updateProfile(firebaseUser, { displayName: displayName.trim() })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (err: any) {
+      setProfileError(err?.message ?? 'Kayıt sırasında hata oluştu.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handleDownload() {
+    if (!firebaseUser) return
+    setIsDownloading(true)
+    try {
+      await downloadMyData(firebaseUser.uid)
+    } catch {
+      alert('Veri indirilemedi. Tekrar deneyin.')
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
+  async function handleLogout() {
+    await logoutUser()
+    router.replace('/auth/login')
+  }
+
+  const currentName = profile?.displayName ?? firebaseUser?.displayName ?? 'Kullanıcı'
+
+  const tabs = [
+    { id: 'profile',  label: 'Profil',   icon: User },
+    { id: 'security', label: 'Güvenlik', icon: Shield },
+    { id: 'data',     label: 'Verilerim', icon: Download },
+  ] as const
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-background">
+      <div className="hidden lg:block"><Sidebar /></div>
+
+      {drawerOpen && (
+        <>
+          <div className="lg:hidden fixed inset-0 z-30 bg-black/60 backdrop-blur-sm"
+            onClick={() => setDrawerOpen(false)} />
+          <div className="lg:hidden fixed left-0 top-0 bottom-0 z-40 w-[240px]">
+            <Sidebar onClose={() => setDrawerOpen(false)} />
+          </div>
+        </>
+      )}
+
+      <main className="flex-1 overflow-y-auto">
+        {/* Mobile header */}
+        <div className="lg:hidden sticky top-0 z-20 glass border-b border-surface-border px-4 py-3 flex items-center gap-3">
+          <button onClick={() => setDrawerOpen(true)}
+            className="p-1.5 rounded hover:bg-surface text-text-secondary">
+            <Menu className="w-5 h-5" />
+          </button>
+          <span className="font-display font-semibold text-text-primary flex-1">Profil & Ayarlar</span>
+        </div>
+
+        {/* Desktop header */}
+        <div className="hidden lg:block sticky top-0 z-10 glass border-b border-surface-border px-6 py-4">
+          <h1 className="font-display font-semibold text-text-primary">Profil & Ayarlar</h1>
+          <p className="text-xs text-text-muted mt-0.5">Hesap bilgilerini ve güvenlik ayarlarını yönet</p>
+        </div>
+
+        <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-5">
+
+          {/* Profil özeti */}
+          <div className="card flex items-center gap-4">
+            {isLoading
+              ? <div className="w-12 h-12 rounded-full bg-surface animate-pulse shrink-0" />
+              : <Avatar name={currentName} size="lg" />
+            }
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-text-primary">{currentName}</p>
+              <p className="text-xs text-text-muted mt-0.5">{firebaseUser?.email}</p>
+              <div className="flex items-center gap-3 mt-1.5">
+                {firebaseUser?.emailVerified
+                  ? <span className="flex items-center gap-1 text-2xs text-accent-green"><ShieldCheck className="w-3 h-3" />Doğrulandı</span>
+                  : <span className="flex items-center gap-1 text-2xs text-accent-amber"><AlertCircle className="w-3 h-3" />E-posta doğrulanmadı</span>
+                }
+              </div>
+            </div>
+          </div>
+
+          {/* Tab navigasyonu */}
+          <div className="flex gap-1 bg-surface border border-surface-border rounded-lg p-1">
+            {tabs.map(tab => {
+              const Icon = tab.icon
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded text-xs font-medium transition-all',
+                    activeTab === tab.id
+                      ? 'bg-brand text-white'
+                      : 'text-text-muted hover:text-text-secondary hover:bg-surface-hover'
+                  )}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {tab.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Profil Tab */}
+          {activeTab === 'profile' && (
+            <section className="space-y-4">
+              <div className="card">
+                <form onSubmit={handleSaveProfile} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Ad Soyad</label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                      <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setProfileError('') }}
+                        placeholder="Ad Soyad" className="input pl-10" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                      E-posta <span className="text-text-muted font-normal">(değiştirilemez)</span>
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                      <input type="email" value={firebaseUser?.email ?? ''} disabled
+                        className="input pl-10 opacity-50 cursor-not-allowed" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-text-secondary mb-1.5">Bölüm</label>
+                      <div className="relative">
+                        <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                        <select value={department} onChange={e => setDepartment(e.target.value)}
+                          className="input pl-10 appearance-none bg-surface">
+                          <option value="">Bölüm seçin</option>
+                          {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                     <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1.5">Sınıf</label>
+                      <select
+                        value={grade}
+                        onChange={e => setGrade(e.target.value)}
+                        className="input appearance-none bg-surface"
+                      >
+                        <option value="">—</option>
+                        <option value="prep">Hazırlık</option>
+
+                        {[1,2,3,4].map(g => (
+                          <option key={g} value={g}>
+                            {g}. sınıf
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  {profileError && (
+                    <div className="flex items-center gap-2 text-xs text-accent-red bg-accent-red/10 border border-accent-red/20 rounded px-3 py-2.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />{profileError}
+                    </div>
+                  )}
+                  {saved && (
+                    <div className="flex items-center gap-2 text-xs text-accent-green bg-accent-green/10 border border-accent-green/20 rounded px-3 py-2.5">
+                      <CheckCircle className="w-3.5 h-3.5 shrink-0" />Profil başarıyla güncellendi!
+                    </div>
+                  )}
+                  <button type="submit" disabled={isSaving}
+                    className={cn('btn-primary text-sm px-5 py-2 flex items-center gap-2', isSaving && 'opacity-70 cursor-not-allowed')}>
+                    {isSaving
+                      ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      : <Save className="w-3.5 h-3.5" />
+                    }
+                    Kaydet
+                  </button>
+                </form>
+              </div>
+            </section>
+          )}
+
+          {/* Güvenlik Tab */}
+          {activeTab === 'security' && (
+            <section className="space-y-4">
+              <div>
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5" />Şifre Değiştir
+                </h3>
+                <ChangePasswordSection />
+              </div>
+
+              <div>
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5" />E-posta Oturum Doğrulaması
+                </h3>
+                <EmailVerificationSection />
+              </div>
+
+              <div>
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Clock className="w-3.5 h-3.5" />Oturum
+                </h3>
+                <div className="card space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-text-primary font-medium">Otomatik oturum kapanması</p>
+                      <p className="text-xs text-text-muted mt-0.5">Giriş yaptıktan 3 saat sonra oturumun kapanır</p>
+                    </div>
+                    <span className="text-xs text-text-muted bg-surface border border-surface-border rounded px-2.5 py-1 tabular-nums">3 saat</span>
+                  </div>
+                  <div className="border-t border-surface-border pt-3">
+                    <button onClick={handleLogout}
+                      className="flex items-center gap-2 text-sm text-accent-red hover:text-accent-red/80 font-medium transition-colors">
+                      <LogOut className="w-4 h-4" />Çıkış Yap
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Verilerim Tab */}
+          {activeTab === 'data' && (
+            <section className="space-y-4">
+              <div>
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Download className="w-3.5 h-3.5" />Verilerimi İndir
+                </h3>
+                <div className="card space-y-4">
+                  <div className="text-sm text-text-secondary leading-relaxed">
+                    Platformdaki tüm kişisel verilerinizi (profil bilgileri, kaydedilenler) JSON formatında indirebilirsiniz.
+                    Bu dosya KVKK kapsamındaki veri erişim hakkınız gereğince sunulmaktadır.
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-text-muted">
+                    {['Profil bilgileri', 'Bölüm ve sınıf', 'Kayıtlı gönderiler', 'Hesap oluşturma tarihi'].map(item => (
+                      <div key={item} className="flex items-center gap-2">
+                        <CheckCircle className="w-3.5 h-3.5 text-accent-green shrink-0" />
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={handleDownload}
+                    disabled={isDownloading}
+                    className={cn('btn-secondary text-sm flex items-center gap-2 px-5 py-2', isDownloading && 'opacity-70 cursor-not-allowed')}
+                  >
+                    {isDownloading
+                      ? <div className="w-4 h-4 border-2 border-text-muted/30 border-t-text-muted rounded-full animate-spin" />
+                      : <Download className="w-4 h-4" />
+                    }
+                    {isDownloading ? 'Hazırlanıyor...' : 'Verilerimi İndir (JSON)'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Hesap bilgisi */}
+              <div>
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Shield className="w-3.5 h-3.5" />Hesap Bilgileri
+                </h3>
+                <div className="card divide-y divide-surface-border">
+                  {[
+                    { label: 'Rol', value: profile?.role === 'moderator' ? '🛡 Moderatör' : profile?.role === 'admin' ? '👑 Admin' : '🎓 Öğrenci' },
+                    { label: 'Katılım tarihi', value: profile?.joinedAt ? new Date(profile.joinedAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—' },
+                    { label: 'Bölüm', value: profile?.department || '—' },
+                  ].map(row => (
+                    <div key={row.label} className="flex items-center justify-between py-2.5">
+                      <span className="text-sm text-text-secondary">{row.label}</span>
+                      <span className="text-xs text-text-primary">{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* ─── Platform Bağlantıları ─────────────────────────────────── */}
+          <div className="border-t border-surface-border pt-5">
+            <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+              <FileText className="w-3.5 h-3.5" />Platform Bilgileri
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {[
+                { href: '/about',   icon: Info,     label: 'Hakkımızda',           desc: 'Platform hakkında bilgi' },
+                { href: '/guide',   icon: BookOpen, label: 'Kullanım Kılavuzu',    desc: 'Nasıl kullanılır?' },
+                { href: '/privacy', icon: Shield,   label: 'Gizlilik Politikası',  desc: 'KVKK ve veri güvenliği' },
+                { href: '/contact', icon: Mail,     label: 'Bize Ulaşın',          desc: 'Şikayet ve geri bildirim' },
+              ].map(link => {
+                const Icon = link.icon
+                return (
+                  <Link key={link.href} href={link.href}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-surface-border hover:border-brand/40 hover:bg-surface transition-all group">
+                    <div className="w-7 h-7 rounded-lg bg-surface flex items-center justify-center shrink-0 group-hover:bg-brand/10 transition-colors">
+                      <Icon className="w-3.5 h-3.5 text-text-muted group-hover:text-brand transition-colors" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-text-secondary group-hover:text-text-primary transition-colors">{link.label}</p>
+                      <p className="text-2xs text-text-muted">{link.desc}</p>
+                    </div>
+                    <ExternalLink className="w-3 h-3 text-text-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  )
+}

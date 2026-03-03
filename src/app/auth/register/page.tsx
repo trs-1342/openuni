@@ -8,16 +8,82 @@ import { cn, isValidStudentEmail } from '@/lib/utils'
 import { registerUser, getAuthErrorMessage } from '@/lib/auth'
 
 const DEPARTMENTS = [
+  // Mühendislik
   'Bilgisayar Mühendisliği',
+  'Yazılım Mühendisliği',
   'Elektrik-Elektronik Mühendisliği',
   'Makine Mühendisliği',
   'Endüstri Mühendisliği',
-  'İşletme',
-  'Psikoloji',
-  'Hukuk',
+  'İnşaat Mühendisliği',
+  'Mekatronik Mühendisliği',
+  'Uçak Mühendisliği',
+  'Havacılık ve Uzay Mühendisliği',
+
+  // Mimarlık ve Tasarım
   'Mimarlık',
-  'Diğer',
-]
+  'İç Mimarlık',
+  'İç Mimarlık ve Çevre Tasarımı',
+  'Grafik Tasarım',
+  'Görsel İletişim Tasarımı',
+  'Yeni Medya ve İletişim',
+  'Radyo, Televizyon ve Sinema',
+
+  // Sağlık
+  'Hemşirelik',
+  'Fizyoterapi ve Rehabilitasyon',
+  'Beslenme ve Diyetetik',
+  'Çocuk Gelişimi',
+  'Odyoloji',
+  'Dil ve Konuşma Terapisi',
+  'Sağlık Yönetimi',
+
+  // Sosyal ve İdari Bilimler
+  'İşletme',
+  'Uluslararası Ticaret ve Finansman',
+  'Uluslararası Ticaret ve İşletmecilik',
+  'Siyaset Bilimi ve Uluslararası İlişkiler',
+  'Psikoloji',
+  'Sosyoloji',
+  'Halkla İlişkiler ve Reklamcılık',
+  'Reklamcılık',
+
+  // Hukuk
+  'Hukuk',
+
+  // Spor
+  'Antrenörlük Eğitimi',
+  'Spor Yöneticiliği',
+  'Rekreasyon',
+
+  // Havacılık
+  'Uçak Bakım ve Onarım',
+  'Havacılık Yönetimi',
+  'Pilotaj',
+  'Sivil Hava Ulaştırma İşletmeciliği',
+
+  // Ön Lisans (Meslek Yüksekokulu)
+  'Bilgisayar Programcılığı',
+  'Bilgi Güvenliği Teknolojisi',
+  'Web Tasarımı ve Kodlama',
+  'Grafik Tasarımı',
+  'Adalet',
+  'Bankacılık ve Sigortacılık',
+  'Dış Ticaret',
+  'Lojistik',
+  'Turizm ve Otel İşletmeciliği',
+  'Aşçılık',
+  'Sivil Hava Ulaştırma İşletmeciliği (MYO)',
+  'Uçak Teknolojisi',
+  'Uçuş Harekat Yöneticiliği',
+  'Sağlık Kurumları İşletmeciliği',
+  'Tıbbi Dokümantasyon ve Sekreterlik',
+  'Tıbbi Görüntüleme Teknikleri',
+  'İlk ve Acil Yardım',
+  'Ameliyathane Hizmetleri',
+  'Anestezi',
+
+  'Diğer'
+];
 
 interface FormState {
   email: string
@@ -169,7 +235,13 @@ export default function RegisterPage() {
                 className="input appearance-none bg-surface"
               >
                 <option value="">—</option>
-                {[1,2,3,4].map(g => <option key={g} value={g}>{g}. sınıf</option>)}
+                <option value="prep">Hazırlık</option>
+
+                {[1,2,3,4].map(g => (
+                  <option key={g} value={g}>
+                    {g}. sınıf
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -251,6 +323,14 @@ export default function RegisterPage() {
             Giriş Yap
           </Link>
         </p>
+
+        {/* Footer linkleri */}
+        <div className="flex items-center justify-center gap-4 mt-8 pt-6 border-t border-surface-border">
+          <Link href="/about"   className="text-2xs text-text-muted hover:text-text-secondary transition-colors">Hakkımızda</Link>
+          <Link href="/guide"   className="text-2xs text-text-muted hover:text-text-secondary transition-colors">Kılavuz</Link>
+          <Link href="/privacy" className="text-2xs text-text-muted hover:text-text-secondary transition-colors">Gizlilik</Link>
+          <Link href="/contact" className="text-2xs text-text-muted hover:text-text-secondary transition-colors">İletişim</Link>
+        </div>
       </div>
     </div>
   )
