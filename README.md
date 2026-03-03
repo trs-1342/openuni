@@ -46,47 +46,6 @@ npm run dev
 
 Uygulama `http://localhost:3000` adresinde çalışacak.
 
-## Proje Yapısı
-
-```
-src/
-├── app/
-│   ├── auth/
-│   │   ├── login/
-│   │   ├── register/
-│   │   └── verify-email/
-│   └── dashboard/
-│       ├── page.tsx              # Ana sayfa feed
-│       ├── notifications/        # Bildirimler
-│       └── spaces/
-│           └── [spaceSlug]/
-│               └── [channelSlug]/ # Kanal sayfası
-├── components/
-│   ├── ui/           # Avatar, Badge
-│   ├── layout/       # Sidebar
-│   ├── channels/     # ChannelHeader
-│   └── posts/        # PostCard
-├── lib/
-│   ├── firebase.ts   # Firebase init
-│   ├── utils.ts      # Yardımcı fonksiyonlar
-│   └── mock-data.ts  # UI dev için mock data
-└── types/
-    └── index.ts      # Tüm TypeScript tipleri
-```
-
-## Veri Modeli (Firestore)
-
-```
-users/{uid}
-spaces/{spaceId}
-  channels/{channelId}
-    posts/{postId}
-      comments/{commentId}
-spaceMembers/{spaceId_userId}
-attachments/{attachmentId}
-notifications/{notificationId}
-```
-
 ## Kanal Tipleri
 
 | Tip | Renk | Kural |
@@ -101,21 +60,3 @@ notifications/{notificationId}
 ## E-posta Doğrulama
 
 Kayıt için yalnızca `@ogr.gelisim.edu.tr` uzantılı e-posta kabul edilir.
-
-## Roadmap
-
-### v1 (Şu an)
-- [x] Proje yapısı ve design system
-- [x] Auth sayfaları (login, register, verify-email)
-- [x] Dashboard ve sidebar navigasyon
-- [x] Kanal sistemi ve post kartları
-- [ ] Firebase entegrasyonu
-- [ ] Form submit ve auth flow
-- [ ] Post oluşturma sayfası
-- [ ] Dosya yükleme (PDF)
-
-### v2
-- [ ] Gelişmiş arama
-- [ ] Bildirim push sistemi
-- [ ] Moderasyon paneli
-- [ ] Etkinlik takvimi
