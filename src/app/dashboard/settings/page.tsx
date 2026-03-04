@@ -19,84 +19,10 @@ import {
   ChevronRight, Info, BookOpen, FileText, ExternalLink,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-const DEPARTMENTS = [
-  // Mühendislik
-  'Bilgisayar Mühendisliği',
-  'Yazılım Mühendisliği',
-  'Elektrik-Elektronik Mühendisliği',
-  'Makine Mühendisliği',
-  'Endüstri Mühendisliği',
-  'İnşaat Mühendisliği',
-  'Mekatronik Mühendisliği',
-  'Uçak Mühendisliği',
-  'Havacılık ve Uzay Mühendisliği',
-
-  // Mimarlık ve Tasarım
-  'Mimarlık',
-  'İç Mimarlık',
-  'İç Mimarlık ve Çevre Tasarımı',
-  'Grafik Tasarım',
-  'Görsel İletişim Tasarımı',
-  'Yeni Medya ve İletişim',
-  'Radyo, Televizyon ve Sinema',
-
-  // Sağlık
-  'Hemşirelik',
-  'Fizyoterapi ve Rehabilitasyon',
-  'Beslenme ve Diyetetik',
-  'Çocuk Gelişimi',
-  'Odyoloji',
-  'Dil ve Konuşma Terapisi',
-  'Sağlık Yönetimi',
-
-  // Sosyal ve İdari Bilimler
-  'İşletme',
-  'Uluslararası Ticaret ve Finansman',
-  'Uluslararası Ticaret ve İşletmecilik',
-  'Siyaset Bilimi ve Uluslararası İlişkiler',
-  'Psikoloji',
-  'Sosyoloji',
-  'Halkla İlişkiler ve Reklamcılık',
-  'Reklamcılık',
-
-  // Hukuk
-  'Hukuk',
-
-  // Spor
-  'Antrenörlük Eğitimi',
-  'Spor Yöneticiliği',
-  'Rekreasyon',
-
-  // Havacılık
-  'Uçak Bakım ve Onarım',
-  'Havacılık Yönetimi',
-  'Pilotaj',
-  'Sivil Hava Ulaştırma İşletmeciliği',
-
-  // Ön Lisans (Meslek Yüksekokulu)
-  'Bilgisayar Programcılığı',
-  'Bilgi Güvenliği Teknolojisi',
-  'Web Tasarımı ve Kodlama',
-  'Grafik Tasarımı',
-  'Adalet',
-  'Bankacılık ve Sigortacılık',
-  'Dış Ticaret',
-  'Lojistik',
-  'Turizm ve Otel İşletmeciliği',
-  'Aşçılık',
-  'Sivil Hava Ulaştırma İşletmeciliği (MYO)',
-  'Uçak Teknolojisi',
-  'Uçuş Harekat Yöneticiliği',
-  'Sağlık Kurumları İşletmeciliği',
-  'Tıbbi Dokümantasyon ve Sekreterlik',
-  'Tıbbi Görüntüleme Teknikleri',
-  'İlk ve Acil Yardım',
-  'Ameliyathane Hizmetleri',
-  'Anestezi',
-
-  'Diğer'
-];
+import {
+  getFakulteList, getBolumList, getGradeOptions,
+  USER_TYPE_LABELS, type UserType,
+} from '@/lib/departments'
 
 // ─── Şifre Değiştirme Panel ────────────────────────────────────────────────
 function ChangePasswordSection() {
@@ -373,17 +299,21 @@ export default function SettingsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [activeTab, setActiveTab]   = useState<'profile' | 'security' | 'data'>('profile')
 
-  const [displayName, setDisplayName] = useState('')
-  const [department,  setDepartment]  = useState('')
-  const [grade,       setGrade]       = useState('')
-  const [isSaving,    setIsSaving]    = useState(false)
-  const [saved,       setSaved]       = useState(false)
+  const [displayName,  setDisplayName]  = useState('')
+  const [userType,     setUserType]     = useState<UserType>('lisans')
+  const [fakulte,      setFakulte]      = useState('')
+  const [department,   setDepartment]   = useState('')
+  const [grade,        setGrade]        = useState('')
+  const [isSaving,     setIsSaving]     = useState(false)
+  const [saved,        setSaved]        = useState(false)
   const [profileError, setProfileError] = useState('')
   const [isDownloading, setIsDownloading] = useState(false)
 
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.displayName ?? '')
+      setUserType((profile as any).userType ?? 'lisans')
+      setFakulte((profile as any).fakulte ?? '')
       setDepartment(profile.department ?? '')
       setGrade(profile.grade?.toString() ?? '')
     }
@@ -398,9 +328,11 @@ export default function SettingsPage() {
     try {
       await updateUserProfile(firebaseUser.uid, {
         displayName: displayName.trim(),
+        userType,
+        fakulte,
         department,
-        grade: grade ? parseInt(grade) : null,
-      })
+        grade: grade === 'hazirlik' ? 'hazirlik' : grade ? parseInt(grade) : null,
+      } as any)
       await updateProfile(firebaseUser, { displayName: displayName.trim() })
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -531,36 +463,67 @@ export default function SettingsPage() {
                         className="input pl-10 opacity-50 cursor-not-allowed" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-2">
-                      <label className="block text-xs font-medium text-text-secondary mb-1.5">Bölüm</label>
+                  {/* Statü seçimi */}
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Statü</label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {(['lisans','onlisans','ogretmen','diger'] as UserType[]).map(t => (
+                        <button key={t} type="button"
+                          onClick={() => { setUserType(t); setFakulte(''); setDepartment(''); setGrade('') }}
+                          className={cn('py-2 px-3 rounded-lg text-xs border transition-all text-left',
+                            userType === t ? 'bg-brand/10 border-brand text-brand' : 'border-surface-border text-text-muted hover:border-surface-active')}>
+                          {USER_TYPE_LABELS[t]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Fakülte / MYO */}
+                  {(userType === 'lisans' || userType === 'onlisans') && (
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                        {userType === 'lisans' ? 'Fakülte' : 'Meslek Yüksekokulu'}
+                      </label>
+                      <select value={fakulte}
+                        onChange={e => { setFakulte(e.target.value); setDepartment('') }}
+                        className="input appearance-none bg-surface">
+                        <option value="">Seçin</option>
+                        {getFakulteList(userType).map(f => <option key={f} value={f}>{f}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Bölüm */}
+                  {fakulte && (
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1.5">Bölüm / Program</label>
                       <div className="relative">
                         <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                         <select value={department} onChange={e => setDepartment(e.target.value)}
                           className="input pl-10 appearance-none bg-surface">
                           <option value="">Bölüm seçin</option>
-                          {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                          {getBolumList(userType, fakulte).map(b => <option key={b} value={b}>{b}</option>)}
                         </select>
                       </div>
                     </div>
-                     <div>
-                      <label className="block text-xs font-medium text-text-secondary mb-1.5">Sınıf</label>
-                      <select
-                        value={grade}
-                        onChange={e => setGrade(e.target.value)}
-                        className="input appearance-none bg-surface"
-                      >
-                        <option value="">—</option>
-                        <option value="prep">Hazırlık</option>
+                  )}
 
-                        {[1,2,3,4].map(g => (
-                          <option key={g} value={g}>
-                            {g}. sınıf
-                          </option>
+                  {/* Sınıf */}
+                  {getGradeOptions(userType, true).length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1.5">Sınıf</label>
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {getGradeOptions(userType, true).map(g => (
+                          <button key={g.value} type="button"
+                            onClick={() => setGrade(g.value)}
+                            className={cn('py-2 rounded-lg text-xs border transition-all',
+                              grade === g.value ? 'bg-brand/10 border-brand text-brand' : 'border-surface-border text-text-muted hover:border-surface-active')}>
+                            {g.label.replace('. Sınıf','').replace(' Sınıfı','')}
+                          </button>
                         ))}
-                      </select>
+                      </div>
                     </div>
-                  </div>
+                  )}
                   {profileError && (
                     <div className="flex items-center gap-2 text-xs text-accent-red bg-accent-red/10 border border-accent-red/20 rounded px-3 py-2.5">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />{profileError}
@@ -666,8 +629,11 @@ export default function SettingsPage() {
                 <div className="card divide-y divide-surface-border">
                   {[
                     { label: 'Rol', value: profile?.role === 'moderator' ? '🛡 Moderatör' : profile?.role === 'admin' ? '👑 Admin' : '🎓 Öğrenci' },
+                    { label: 'Statü', value: USER_TYPE_LABELS[(profile as any)?.userType as UserType] ?? '—' },
                     { label: 'Katılım tarihi', value: profile?.joinedAt ? new Date(profile.joinedAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—' },
+                    { label: 'Fakülte / MYO', value: (profile as any)?.fakulte || '—' },
                     { label: 'Bölüm', value: profile?.department || '—' },
+                    { label: 'Sınıf', value: profile?.grade ? (profile.grade === 'hazirlik' ? 'Hazırlık' : `${profile.grade}. Sınıf`) : '—' },
                   ].map(row => (
                     <div key={row.label} className="flex items-center justify-between py-2.5">
                       <span className="text-sm text-text-secondary">{row.label}</span>

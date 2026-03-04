@@ -13,10 +13,12 @@ import { logoutUser } from '@/lib/auth'
 import {
   Bell, ChevronDown, ChevronRight, Search, Plus,
   Home, Bookmark, Users, X, LogOut, Settings,
-  Info, BookOpen, Shield, Mail, FileText, Hash,
+  Info, BookOpen, Shield, Mail, FileText, Hash, ShieldAlert,
 } from 'lucide-react'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Space } from '@/types'
+
+const ADMIN_EMAIL = 'khalil.khattab@ogr.gelisim.edu.tr'
 
 // ─── Statik sayfalar (her zaman aranabilir) ──────────────────────────────────
 const STATIC_PAGES = [
@@ -531,6 +533,12 @@ export function Sidebar({ onClose }: SidebarProps) {
               <div className="text-xs font-medium text-text-primary truncate">{displayName}</div>
               <div className="text-2xs text-text-muted truncate">{department || 'Öğrenci'}</div>
             </div>
+            {(firebaseUser?.email === ADMIN_EMAIL || profile?.role === 'admin') && (
+              <Link href="/dashboard/admin" title="Admin Paneli" onClick={onClose}
+                className="p-1 text-text-muted hover:text-brand transition-colors shrink-0">
+                <ShieldAlert className="w-3.5 h-3.5" />
+              </Link>
+            )}
             <button
               onClick={handleLogout}
               title="Çıkış Yap"

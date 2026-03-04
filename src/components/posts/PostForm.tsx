@@ -149,14 +149,15 @@ function PostPreview({ values, channel }: { values: FormValues; channel: Channel
 interface PostFormProps {
   channel: Channel
   spaceSlug: string
-  onCancel: () => void
+  spaceId: string
+  onCancel?: () => void
 }
 
-export function PostForm({ channel, spaceSlug, onCancel }: PostFormProps) {
+export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProps) {
   const router  = useRouter()
   const config  = FORM_CONFIG[channel.type]
   const meta    = CHANNEL_META[channel.type]
-  const upload  = useFileUpload(`posts/${channel.spaceId}/${channel.id}`)
+  const upload  = useFileUpload(`posts/${spaceId || 'misc'}/${channel.id || 'misc'}`)
   const { user: firebaseUser } = useAuthStore()
   const { profile } = useUserProfile()
 
@@ -209,13 +210,18 @@ export function PostForm({ channel, spaceSlug, onCancel }: PostFormProps) {
       const author = {
         uid: firebaseUser.uid,
         displayName: profile?.displayName ?? firebaseUser.displayName ?? 'Kullanıcı',
-        avatarUrl: profile?.avatarUrl,
+        ...(profile?.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
         role: profile?.role ?? 'student',
       } as const
 
+      const resolvedSpaceId = spaceId || channel.spaceId || ''
+      if (!resolvedSpaceId) {
+        throw new Error('Space ID bulunamadı. Sayfayı yenileyip tekrar deneyin.')
+      }
+
       await createPost({
         channelId: channel.id,
-        spaceId: channel.spaceId,
+        spaceId: resolvedSpaceId,
         author,
         title: values.title.trim(),
         content: values.content.trim(),

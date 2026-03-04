@@ -50,6 +50,11 @@ function validate(file: File): string | null {
 }
 
 export function useFileUpload(uploadPath = 'posts') {
+  // undefined/null path guard
+  uploadPath = (uploadPath && !uploadPath.includes('undefined') && !uploadPath.includes('null'))
+    ? uploadPath
+    : 'posts/misc'
+
   const [files, setFiles] = useState<UploadedFile[]>([])
 
   const addFiles = useCallback((incoming: File[]) => {
@@ -81,7 +86,8 @@ export function useFileUpload(uploadPath = 'posts') {
   }, [files.length, uploadPath])
 
   function startUpload(entry: UploadedFile) {
-    const storagePath = `${uploadPath}/${Date.now()}_${entry.name}`
+    const safeName    = entry.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const storagePath = `${uploadPath}/${Date.now()}_${safeName}`
     const storageRef  = ref(storage, storagePath)
     const uploadTask  = uploadBytesResumable(storageRef, entry.file)
 

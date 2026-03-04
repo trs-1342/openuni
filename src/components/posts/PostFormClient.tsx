@@ -7,15 +7,17 @@ import type { Channel } from '@/types'
 interface Props {
   channel: Channel
   spaceSlug: string
+  spaceId: string
 }
 
-export function PostFormClient({ channel, spaceSlug }: Props) {
+export function PostFormClient({ channel, spaceSlug, spaceId }: Props) {
   const router = useRouter()
 
   return (
     <PostForm
       channel={channel}
       spaceSlug={spaceSlug}
+      spaceId={spaceId}
       onCancel={() => router.back()}
     />
   )

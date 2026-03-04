@@ -1,4 +1,3 @@
-// src/lib/firestore.ts
 import {
   collection,
   doc,
@@ -8,18 +7,20 @@ import {
   updateDoc,
   query,
   where,
+  orderBy,
   limit,
   onSnapshot,
   serverTimestamp,
   increment,
   writeBatch,
   Timestamp,
+  type QueryConstraint,
   type Unsubscribe,
 } from 'firebase/firestore'
 import { db } from './firebase'
-import type { Space, Post, Notification, Channel, User, Comment } from '@/types'
+import type { Space, Post, Notification, Channel, User } from '@/types'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Timestamp dönüşümü ───────────────────────────────────────────────────────
 function fromTimestamp(ts: any): Date {
   if (!ts) return new Date()
   if (ts instanceof Timestamp) return ts.toDate()
@@ -27,160 +28,160 @@ function fromTimestamp(ts: any): Date {
   return new Date(ts)
 }
 
-function postFromDoc(d: any): Post {
-  const data = d.data()
+function postFromDoc(doc: any): Post {
+  const d = doc.data()
   return {
-    ...data,
-    id: d.id,
-    createdAt: fromTimestamp(data.createdAt),
-    updatedAt: fromTimestamp(data.updatedAt),
-    attachments: (data.attachments ?? []).map((a: any) => ({
+    ...d,
+    id: doc.id,
+    createdAt: fromTimestamp(d.createdAt),
+    updatedAt: fromTimestamp(d.updatedAt),
+    attachments: (d.attachments ?? []).map((a: any) => ({
       ...a,
       uploadedAt: fromTimestamp(a.uploadedAt),
     })),
   } as Post
 }
 
-function notifFromDoc(d: any): Notification {
-  const data = d.data()
-  return { ...data, id: d.id, createdAt: fromTimestamp(data.createdAt) } as Notification
+function notifFromDoc(doc: any): Notification {
+  const d = doc.data()
+  return {
+    ...d,
+    id: doc.id,
+    createdAt: fromTimestamp(d.createdAt),
+  } as Notification
 }
 
-function spaceFromDoc(d: any): Space {
-  const data = d.data()
+function spaceFromDoc(doc: any): Space {
+  const d = doc.data()
   return {
-    ...data,
-    id: d.id,
-    createdAt: fromTimestamp(data.createdAt),
-    channels: (data.channels ?? []).map((c: any) => ({
+    ...d,
+    id: doc.id,
+    createdAt: fromTimestamp(d.createdAt),
+    channels: (d.channels ?? []).map((c: any) => ({
       ...c,
       createdAt: fromTimestamp(c.createdAt),
     })),
   } as Space
 }
 
-function userFromDoc(d: any): User {
-  const data = d.data()
+function userFromDoc(doc: any): User {
+  const d = doc.data()
   return {
-    ...data,
-    uid: d.id,
-    joinedAt: fromTimestamp(data.joinedAt),
-    lastActiveAt: fromTimestamp(data.lastActiveAt),
+    ...d,
+    uid: doc.id,
+    joinedAt: fromTimestamp(d.joinedAt),
+    lastActiveAt: fromTimestamp(d.lastActiveAt),
   } as User
 }
 
-function commentFromDoc(d: any): Comment {
-  const data = d.data()
-  return {
-    ...data,
-    id: d.id,
-    createdAt: fromTimestamp(data.createdAt),
-    updatedAt: fromTimestamp(data.updatedAt),
-  } as Comment
-}
-
-// Index gerektiren hataları konsola yaz, geri kalanları sessiz yut
-function handleFirestoreError(err: any, label: string) {
-  if (err?.code === 'permission-denied') return // sessiz
-  if (err?.message?.includes('index')) {
-    // Sadece linki göster, stack trace yok
-    const link = err.message.match(/https:\/\/\S+/)?.[0] ?? ''
-    console.warn(`[Index eksik — ${label}] Oluştur: ${link}`)
-    return
-  }
-  console.error(`[Firestore — ${label}]`, err.message)
-}
-
 // ─── USER ─────────────────────────────────────────────────────────────────────
-export async function getUserProfile(uid: string): Promise<User | null> {
-  try {
-    const snap = await getDoc(doc(db, 'users', uid))
-    if (!snap.exists()) return null
-    return userFromDoc(snap)
-  } catch (err) { handleFirestoreError(err, 'getUserProfile'); return null }
-}
+
 
 export async function updateUserLastActive(uid: string) {
-  try {
-    await updateDoc(doc(db, 'users', uid), { lastActiveAt: serverTimestamp() })
-  } catch { /* sessiz */ }
-}
-
-export async function updateUserProfile(uid: string, data: Partial<{
-  displayName: string; department: string; grade: number | null; avatarUrl: string
-}>) {
-  await updateDoc(doc(db, 'users', uid), { ...data, lastActiveAt: serverTimestamp() })
+  await updateDoc(doc(db, 'users', uid), {
+    lastActiveAt: serverTimestamp(),
+  })
 }
 
 // ─── SPACES ───────────────────────────────────────────────────────────────────
-// ⚠️ Sadece tek where — orderBy YOK → index gerekmez → client-side sort
+export async function getSpaces(): Promise<Space[]> {
+  const snap = await getDocs(
+    query(collection(db, 'spaces'), where('isPublic', '==', true), orderBy('memberCount', 'desc'))
+  )
+  return snap.docs.map(spaceFromDoc)
+}
+
 export function subscribeToSpaces(callback: (spaces: Space[]) => void): Unsubscribe {
   return onSnapshot(
-    query(collection(db, 'spaces'), where('isPublic', '==', true)),
-    (snap) => {
-      const spaces = snap.docs
-        .map(spaceFromDoc)
-        .sort((a, b) => b.memberCount - a.memberCount)
-      callback(spaces)
-    },
-    (err) => handleFirestoreError(err, 'subscribeToSpaces')
+    query(collection(db, 'spaces'), where('isPublic', '==', true), orderBy('memberCount', 'desc')),
+    (snap) => callback(snap.docs.map(spaceFromDoc))
   )
+}
+
+export async function getSpace(spaceId: string): Promise<Space | null> {
+  const snap = await getDoc(doc(db, 'spaces', spaceId))
+  if (!snap.exists()) return null
+  return spaceFromDoc(snap)
 }
 
 export async function getSpaceBySlug(slug: string): Promise<Space | null> {
-  try {
-    const snap = await getDocs(
-      query(collection(db, 'spaces'), where('slug', '==', slug), limit(1))
-    )
-    if (snap.empty) return null
-    return spaceFromDoc(snap.docs[0])
-  } catch (err) { handleFirestoreError(err, 'getSpaceBySlug'); return null }
+  const snap = await getDocs(
+    query(collection(db, 'spaces'), where('slug', '==', slug), limit(1))
+  )
+  if (snap.empty) return null
+  return spaceFromDoc(snap.docs[0])
 }
 
 // ─── POSTS ────────────────────────────────────────────────────────────────────
-// ⚠️ Sadece tek where — orderBy YOK → client-side filter + sort
-export function subscribeToPosts(channelId: string, callback: (posts: Post[]) => void): Unsubscribe {
-  return onSnapshot(
-    query(collection(db, 'posts'), where('channelId', '==', channelId), limit(40)),
-    (snap) => {
-      const posts = snap.docs
-        .map(postFromDoc)
-        .filter(p => p.status === 'published')
-        .sort((a, b) => {
-          if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1
-          return b.createdAt.getTime() - a.createdAt.getTime()
-        })
-      callback(posts)
-    },
-    (err) => handleFirestoreError(err, 'subscribeToPosts')
+export async function getPosts(channelId: string, limitCount = 20): Promise<Post[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, 'posts'),
+      where('channelId', '==', channelId),
+      where('status', '==', 'published'),
+      orderBy('isPinned', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(limitCount)
+    )
   )
+  return snap.docs.map(postFromDoc)
+}
+
+export async function getRecentPosts(spaceId: string, limitCount = 10): Promise<Post[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, 'posts'),
+      where('spaceId', '==', spaceId),
+      where('status', '==', 'published'),
+      orderBy('createdAt', 'desc'),
+      limit(limitCount)
+    )
+  )
+  return snap.docs.map(postFromDoc)
 }
 
 export async function getRecentPostsForUser(spaceIds: string[], limitCount = 15): Promise<Post[]> {
-  if (!spaceIds.length) return []
-  try {
-    const snap = await getDocs(
-      query(collection(db, 'posts'), where('spaceId', 'in', spaceIds.slice(0, 10)), limit(limitCount))
+  if (spaceIds.length === 0) return []
+  // Firestore 'in' max 10 element destekler
+  const batch = spaceIds.slice(0, 10)
+  const snap = await getDocs(
+    query(
+      collection(db, 'posts'),
+      where('spaceId', 'in', batch),
+      where('status', '==', 'published'),
+      orderBy('createdAt', 'desc'),
+      limit(limitCount)
     )
-    return snap.docs
-      .map(postFromDoc)
-      .filter(p => p.status === 'published')
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-  } catch (err) { handleFirestoreError(err, 'getRecentPosts'); return [] }
+  )
+  return snap.docs.map(postFromDoc)
 }
 
-export async function getPost(postId: string): Promise<Post | null> {
-  try {
-    const snap = await getDoc(doc(db, 'posts', postId))
-    if (!snap.exists()) return null
-    return postFromDoc(snap)
-  } catch (err) { handleFirestoreError(err, 'getPost'); return null }
+export function subscribeToPosts(
+  channelId: string,
+  callback: (posts: Post[]) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(
+      collection(db, 'posts'),
+      where('channelId', '==', channelId),
+      where('status', '==', 'published'),
+      orderBy('isPinned', 'desc'),
+      orderBy('createdAt', 'desc'),
+      limit(20)
+    ),
+    (snap) => callback(snap.docs.map(postFromDoc))
+  )
 }
 
 export async function createPost(data: {
-  channelId: string; spaceId: string; author: Post['author']
-  title: string; content: string; tags: string[]
-  attachments: Post['attachments']; isAnnouncement: boolean
+  channelId: string
+  spaceId: string
+  author: Post['author']
+  title: string
+  content: string
+  tags: string[]
+  attachments: Post['attachments']
+  isAnnouncement: boolean
 }): Promise<string> {
   const ref = await addDoc(collection(db, 'posts'), {
     ...data,
@@ -192,107 +193,322 @@ export async function createPost(data: {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  try {
-    const spaceRef  = doc(db, 'spaces', data.spaceId)
-    const spaceSnap = await getDoc(spaceRef)
-    if (spaceSnap.exists()) {
-      const channels: Channel[] = spaceSnap.data().channels ?? []
-      await updateDoc(spaceRef, {
-        channels: channels.map(ch =>
-          ch.id === data.channelId ? { ...ch, postCount: (ch.postCount ?? 0) + 1 } : ch
-        ),
-      })
-    }
-  } catch { /* sessiz */ }
+
+  // Space'deki channel postCount'u artır
+  const spaceRef = doc(db, 'spaces', data.spaceId)
+  const spaceSnap = await getDoc(spaceRef)
+  if (spaceSnap.exists()) {
+    const spaceData = spaceSnap.data()
+    const channels: Channel[] = spaceData.channels ?? []
+    const updated = channels.map((ch) =>
+      ch.id === data.channelId ? { ...ch, postCount: (ch.postCount ?? 0) + 1 } : ch
+    )
+    await updateDoc(spaceRef, { channels: updated })
+  }
+
   return ref.id
 }
 
 export async function incrementViewCount(postId: string) {
-  try {
-    await updateDoc(doc(db, 'posts', postId), { viewCount: increment(1) })
-  } catch { /* sessiz */ }
-}
-
-// ─── BOOKMARKS ────────────────────────────────────────────────────────────────
-export async function getBookmarkedPosts(userId: string): Promise<Post[]> {
-  try {
-    const snap = await getDoc(doc(db, 'users', userId))
-    if (!snap.exists()) return []
-    const ids: string[] = snap.data().bookmarks ?? []
-    if (!ids.length) return []
-    const results = await Promise.all(ids.slice(0, 20).map(id => getPost(id)))
-    return results.filter(Boolean) as Post[]
-  } catch (err) { handleFirestoreError(err, 'getBookmarks'); return [] }
-}
-
-export async function toggleBookmark(userId: string, postId: string): Promise<boolean> {
-  try {
-    const ref       = doc(db, 'users', userId)
-    const snap      = await getDoc(ref)
-    const bookmarks: string[] = snap.exists() ? (snap.data().bookmarks ?? []) : []
-    const has       = bookmarks.includes(postId)
-    await updateDoc(ref, {
-      bookmarks: has ? bookmarks.filter(id => id !== postId) : [...bookmarks, postId],
-    })
-    return !has
-  } catch (err) { handleFirestoreError(err, 'toggleBookmark'); return false }
+  await updateDoc(doc(db, 'posts', postId), {
+    viewCount: increment(1),
+  })
 }
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
-// ⚠️ Sadece tek where — orderBy YOK → client-side sort
-export function subscribeToNotifications(userId: string, callback: (notifs: Notification[]) => void): Unsubscribe {
+export async function getNotifications(userId: string): Promise<Notification[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, 'notifications'),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc'),
+      limit(30)
+    )
+  )
+  return snap.docs.map(notifFromDoc)
+}
+
+export function subscribeToNotifications(
+  userId: string,
+  callback: (notifs: Notification[]) => void
+): Unsubscribe {
   return onSnapshot(
-    query(collection(db, 'notifications'), where('userId', '==', userId), limit(30)),
-    (snap) => {
-      const notifs = snap.docs
-        .map(notifFromDoc)
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      callback(notifs)
-    },
-    (err) => handleFirestoreError(err, 'subscribeToNotifications')
+    query(
+      collection(db, 'notifications'),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc'),
+      limit(30)
+    ),
+    (snap) => callback(snap.docs.map(notifFromDoc))
   )
 }
 
 export async function markNotificationRead(notifId: string) {
-  try { await updateDoc(doc(db, 'notifications', notifId), { isRead: true }) } catch { /* sessiz */ }
+  await updateDoc(doc(db, 'notifications', notifId), { isRead: true })
 }
 
 export async function markAllNotificationsRead(userId: string) {
-  try {
-    const snap = await getDocs(
-      query(collection(db, 'notifications'), where('userId', '==', userId), where('isRead', '==', false))
+  const snap = await getDocs(
+    query(
+      collection(db, 'notifications'),
+      where('userId', '==', userId),
+      where('isRead', '==', false)
     )
-    const batch = writeBatch(db)
-    snap.docs.forEach(d => batch.update(d.ref, { isRead: true }))
-    await batch.commit()
-  } catch { /* sessiz */ }
+  )
+  const batch = writeBatch(db)
+  snap.docs.forEach((d) => batch.update(d.ref, { isRead: true }))
+  await batch.commit()
+}
+
+export async function createNotification(data: Omit<Notification, 'id' | 'createdAt'>) {
+  await addDoc(collection(db, 'notifications'), {
+    ...data,
+    createdAt: serverTimestamp(),
+  })
 }
 
 // ─── COMMENTS ────────────────────────────────────────────────────────────────
-// ⚠️ Sadece tek where — orderBy YOK → client-side sort
-export function subscribeToComments(postId: string, callback: (comments: Comment[]) => void): Unsubscribe {
+import type { Comment } from '@/types'
+
+function commentFromDoc(doc: any): Comment {
+  const d = doc.data()
+  return {
+    ...d,
+    id: doc.id,
+    createdAt: fromTimestamp(d.createdAt),
+    updatedAt: fromTimestamp(d.updatedAt),
+  } as Comment
+}
+
+export async function getComments(postId: string): Promise<Comment[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, 'comments'),
+      where('postId', '==', postId),
+      orderBy('createdAt', 'asc')
+    )
+  )
+  return snap.docs.map(commentFromDoc)
+}
+
+export function subscribeToComments(
+  postId: string,
+  callback: (comments: Comment[]) => void
+): Unsubscribe {
   return onSnapshot(
-    query(collection(db, 'comments'), where('postId', '==', postId), limit(50)),
-    (snap) => {
-      const comments = snap.docs
-        .map(commentFromDoc)
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-      callback(comments)
-    },
-    (err) => handleFirestoreError(err, 'subscribeToComments')
+    query(
+      collection(db, 'comments'),
+      where('postId', '==', postId),
+      orderBy('createdAt', 'asc')
+    ),
+    (snap) => callback(snap.docs.map(commentFromDoc))
   )
 }
 
 export async function createComment(data: {
-  postId: string; parentId?: string; author: Comment['author']; content: string
+  postId: string
+  parentId?: string
+  replyToAuthor?: string
+  author: Comment['author']
+  content: string
 }): Promise<string> {
   const ref = await addDoc(collection(db, 'comments'), {
     ...data,
     authorId: data.author.uid,
     isEdited: false,
+    reactions: {},
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
-  try { await updateDoc(doc(db, 'posts', data.postId), { commentCount: increment(1) }) } catch { /* sessiz */ }
+  // Post'un commentCount'unu artır
+  await updateDoc(doc(db, 'posts', data.postId), {
+    commentCount: increment(1),
+  })
   return ref.id
+}
+
+export async function getPost(postId: string): Promise<Post | null> {
+  const snap = await getDoc(doc(db, 'posts', postId))
+  if (!snap.exists()) return null
+  return postFromDoc(snap)
+}
+
+// ─── Post güncelleme / silme / arşiv ─────────────────────────────────────────
+export async function updatePost(postId: string, data: {
+  title?: string; content?: string; tags?: string[]
+}): Promise<void> {
+  await updateDoc(doc(db, 'posts', postId), {
+    ...data, isEdited: true,
+    editedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deletePost(postId: string): Promise<void> {
+  await updateDoc(doc(db, 'posts', postId), { status: 'rejected', updatedAt: serverTimestamp() })
+}
+
+export async function archivePost(postId: string): Promise<void> {
+  await updateDoc(doc(db, 'posts', postId), { status: 'archived', updatedAt: serverTimestamp() })
+}
+
+export async function pinPost(postId: string, isPinned: boolean): Promise<void> {
+  await updateDoc(doc(db, 'posts', postId), { isPinned, updatedAt: serverTimestamp() })
+}
+
+// ─── Reactions ────────────────────────────────────────────────────────────────
+export async function toggleReaction(
+  collection_: 'posts' | 'comments',
+  docId: string,
+  emoji: string,
+  userId: string
+): Promise<void> {
+  const ref = doc(db, collection_, docId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return
+  const reactions: Record<string, string[]> = snap.data()?.reactions ?? {}
+  const users = reactions[emoji] ?? []
+  const already = users.includes(userId)
+  await updateDoc(ref, {
+    [`reactions.${emoji}`]: already
+      ? users.filter(u => u !== userId)
+      : [...users, userId],
+  })
+}
+
+// ─── Yorum düzenleme / silme ─────────────────────────────────────────────────
+export async function updateComment(commentId: string, content: string): Promise<void> {
+  await updateDoc(doc(db, 'comments', commentId), {
+    content, isEdited: true, updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteComment(commentId: string, postId: string): Promise<void> {
+  await updateDoc(doc(db, 'comments', commentId), { content: '[silindi]', updatedAt: serverTimestamp() })
+  await updateDoc(doc(db, 'posts', postId), { commentCount: increment(-1) })
+}
+
+// ─── Bookmark ─────────────────────────────────────────────────────────────────
+export async function toggleBookmark(userId: string, postId: string, current: string[]): Promise<void> {
+  const already = current.includes(postId)
+  await updateDoc(doc(db, 'users', userId), {
+    bookmarks: already ? current.filter(id => id !== postId) : [...current, postId],
+  })
+}
+
+export async function getUserProfile(uid: string): Promise<User | null> {
+  const snap = await getDoc(doc(db, 'users', uid))
+  if (!snap.exists()) return null
+  const d = snap.data()
+  return {
+    ...d,
+    uid: snap.id,
+    joinedAt: d.joinedAt?.toDate?.() ?? new Date(),
+    lastActiveAt: d.lastActiveAt?.toDate?.() ?? new Date(),
+    banUntil: d.banUntil?.toDate?.() ?? null,
+    muteUntil: d.muteUntil?.toDate?.() ?? null,
+  } as User
+}
+
+export async function updateUserProfile(uid: string, data: Partial<User>): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { ...data, updatedAt: serverTimestamp() })
+}
+
+// ─── Admin: Ban / Mute / Moderatör ───────────────────────────────────────────
+export async function banUser(targetUid: string, reason: string, until: Date | null): Promise<void> {
+  await updateDoc(doc(db, 'users', targetUid), {
+    isBanned: true, banReason: reason,
+    banUntil: until ?? null,
+  })
+}
+
+export async function unbanUser(targetUid: string): Promise<void> {
+  await updateDoc(doc(db, 'users', targetUid), {
+    isBanned: false, banReason: '', banUntil: null,
+  })
+}
+
+export async function muteUser(targetUid: string, reason: string, until: Date | null): Promise<void> {
+  await updateDoc(doc(db, 'users', targetUid), {
+    isMuted: true, muteReason: reason, muteUntil: until ?? null,
+  })
+}
+
+export async function unmuteUser(targetUid: string): Promise<void> {
+  await updateDoc(doc(db, 'users', targetUid), {
+    isMuted: false, muteReason: '', muteUntil: null,
+  })
+}
+
+export async function setUserRole(targetUid: string, role: import('@/types').UserRole): Promise<void> {
+  await updateDoc(doc(db, 'users', targetUid), { role })
+}
+
+export async function getAllUsers(): Promise<User[]> {
+  const snap = await getDocs(collection(db, 'users'))
+  return snap.docs.map(d => ({
+    ...d.data(), uid: d.id,
+    joinedAt: d.data().joinedAt?.toDate?.() ?? new Date(),
+    lastActiveAt: d.data().lastActiveAt?.toDate?.() ?? new Date(),
+    banUntil: d.data().banUntil?.toDate?.() ?? null,
+    muteUntil: d.data().muteUntil?.toDate?.() ?? null,
+  })) as import('@/types').User[]
+}
+
+export async function getAllPosts(): Promise<Post[]> {
+  const snap = await getDocs(query(collection(db, 'posts'), limit(200)))
+  return snap.docs.map(postFromDoc)
+}
+
+export async function hardDeletePost(postId: string): Promise<void> {
+  await deleteDoc(doc(db, 'posts', postId))
+}
+
+// ─── SPACE YÖNETİMİ ───────────────────────────────────────────────────────────
+export async function createSpace(data: {
+  name: string
+  description: string
+  iconEmoji: string
+  isPublic: boolean
+  department?: string
+  createdBy: string
+}): Promise<string> {
+  const slug = data.name
+    .toLowerCase()
+    .replace(/ç/g,'c').replace(/ğ/g,'g').replace(/ı/g,'i')
+    .replace(/ö/g,'o').replace(/ş/g,'s').replace(/ü/g,'u')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+  const defaultChannels = [
+    { id: `${slug}-ann`,  name: 'duyurular',      slug: 'duyurular',      type: 'announcement', icon: '📣', color: 'amber',  postCount: 0, isReadOnly: true,  isPinned: true,  rules: [], createdAt: new Date() },
+    { id: `${slug}-ac`,   name: 'akademik-destek', slug: 'akademik-destek', type: 'academic',     icon: '📚', color: 'green',  postCount: 0, isReadOnly: false, isPinned: false, rules: [], createdAt: new Date() },
+    { id: `${slug}-arc`,  name: 'kaynak-arsivi',   slug: 'kaynak-arsivi',   type: 'archive',      icon: '🗂️', color: 'purple', postCount: 0, isReadOnly: false, isPinned: false, rules: [], createdAt: new Date() },
+    { id: `${slug}-soc`,  name: 'sosyal-alan',     slug: 'sosyal-alan',     type: 'social',       icon: '🎉', color: 'blue',   postCount: 0, isReadOnly: false, isPinned: false, rules: [], createdAt: new Date() },
+    { id: `${slug}-sug`,  name: 'oneri-kutusu',    slug: 'oneri-kutusu',    type: 'suggestion',   icon: '💡', color: 'teal',   postCount: 0, isReadOnly: false, isPinned: false, rules: [], createdAt: new Date() },
+    { id: `${slug}-list`, name: 'ilan-panosu',     slug: 'ilan-panosu',     type: 'listing',      icon: '📌', color: 'red',    postCount: 0, isReadOnly: false, isPinned: false, rules: [], createdAt: new Date() },
+  ]
+
+  const ref = await addDoc(collection(db, 'spaces'), {
+    name:        data.name,
+    slug,
+    description: data.description,
+    iconEmoji:   data.iconEmoji,
+    isPublic:    data.isPublic,
+    department:  data.department ?? '',
+    memberCount: 0,
+    createdBy:   data.createdBy,
+    channels:    defaultChannels,
+    createdAt:   serverTimestamp(),
+  })
+
+  // spaceId'yi kanallara ekle (ref.id artık biliniyor)
+  const channelsWithSpaceId = defaultChannels.map(ch => ({ ...ch, spaceId: ref.id }))
+  await updateDoc(ref, { channels: channelsWithSpaceId })
+
+  return ref.id
+}
+
+export async function getBookmarkedPosts(postIds: string[]): Promise<Post[]> {
+  if (!postIds || postIds.length === 0) return []
+  const results = await Promise.all(postIds.map(id => getDoc(doc(db, 'posts', id))))
+  return results.filter(s => s.exists()).map(postFromDoc)
 }

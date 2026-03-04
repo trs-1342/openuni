@@ -5,7 +5,7 @@ import { cn, timeAgo, formatFileSize, CHANNEL_META } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { ChannelBadge, RoleBadge } from '@/components/ui/Badge'
 import type { Post } from '@/types'
-import { MessageSquare, Eye, Pin, Paperclip, FileText, ChevronRight } from 'lucide-react'
+import { MessageSquare, Eye, Pin, Paperclip, FileText, ChevronRight, Download, ImageIcon, File } from 'lucide-react'
 
 interface PostCardProps {
   post: Post
@@ -70,17 +70,28 @@ export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: 
             {/* Attachments */}
             {post.attachments.length > 0 && (
               <div className="mt-3 space-y-1.5">
-                {post.attachments.map((attachment) => (
-                  <div
-                    key={attachment.id}
-                    className="flex items-center gap-2 px-3 py-2 rounded bg-background border border-surface-border text-xs text-text-secondary hover:border-brand/30 hover:text-text-primary transition-all group/file"
-                    onClick={(e) => e.preventDefault()}
-                  >
-                    <FileText className="w-3.5 h-3.5 text-accent-purple shrink-0" />
-                    <span className="flex-1 truncate">{attachment.name}</span>
-                    <span className="text-text-muted tabular-nums shrink-0">{formatFileSize(attachment.size)}</span>
-                  </div>
-                ))}
+                {post.attachments.map((att) => {
+                  const isImage = att.type === 'image'
+                  const isPdf   = att.type === 'pdf'
+                  const Icon    = isImage ? ImageIcon : isPdf ? FileText : File
+                  const iconColor = isImage ? 'text-brand' : isPdf ? 'text-accent-red' : 'text-accent-amber'
+                  return (
+                    <a
+                      key={att.id}
+                      href={att.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      download={!isImage}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex items-center gap-2 px-3 py-2 rounded bg-background border border-surface-border text-xs text-text-secondary hover:border-brand/40 hover:text-text-primary transition-all group/file"
+                    >
+                      <Icon className={cn('w-3.5 h-3.5 shrink-0', iconColor)} />
+                      <span className="flex-1 truncate">{att.name}</span>
+                      <span className="text-text-muted tabular-nums shrink-0">{formatFileSize(att.size)}</span>
+                      <Download className="w-3 h-3 text-text-muted group-hover/file:text-brand shrink-0 transition-colors" />
+                    </a>
+                  )
+                })}
               </div>
             )}
           </div>
