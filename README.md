@@ -19,6 +19,8 @@
 
 ### 1. Bağımlılıkları kur
 
+projeyi [indirin](/trs-1342/openuni/archive/refs/heads/main.zip)
+
 ```bash
 npm install
 ```
