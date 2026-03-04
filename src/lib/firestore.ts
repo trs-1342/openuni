@@ -99,6 +99,14 @@ export function subscribeToSpaces(callback: (spaces: Space[]) => void): Unsubscr
   )
 }
 
+export function subscribeToAllSpaces(callback: (spaces: Space[]) => void): Unsubscribe {
+  // Admin/mod için tüm topluluklar (özel dahil)
+  return onSnapshot(
+    query(collection(db, 'spaces'), orderBy('memberCount', 'desc')),
+    (snap) => callback(snap.docs.map(spaceFromDoc))
+  )
+}
+
 export async function getSpace(spaceId: string): Promise<Space | null> {
   const snap = await getDoc(doc(db, 'spaces', spaceId))
   if (!snap.exists()) return null
@@ -468,6 +476,35 @@ export async function setUserRole(targetUid: string, role: import('@/types').Use
   await updateDoc(doc(db, 'users', targetUid), { role })
 }
 
+
+// ─── Öğretmen Onay Sistemi ────────────────────────────────────────────────────
+export async function submitTeacherApproval(data: {
+  uid: string; email: string; displayName: string; department: string; fakulte: string
+}): Promise<void> {
+  await setDoc(doc(db, 'teacherApprovals', data.uid), {
+    ...data,
+    status:    'pending',
+    createdAt: serverTimestamp(),
+  })
+}
+
+export async function getPendingTeachers(): Promise<any[]> {
+  const snap = await getDocs(
+    query(collection(db, 'teacherApprovals'), where('status', '==', 'pending'), orderBy('createdAt', 'desc'))
+  )
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+}
+
+export async function approveTeacher(uid: string): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { userType: 'ogretmen', teacherApproved: true })
+  await updateDoc(doc(db, 'teacherApprovals', uid), { status: 'approved', resolvedAt: serverTimestamp() })
+}
+
+export async function rejectTeacher(uid: string): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { userType: 'lisans', teacherApproved: false })
+  await updateDoc(doc(db, 'teacherApprovals', uid), { status: 'rejected', resolvedAt: serverTimestamp() })
+}
+
 export async function getAllUsers(): Promise<User[]> {
   const snap = await getDocs(collection(db, 'users'))
   return snap.docs.map(d => ({
@@ -489,6 +526,36 @@ export async function hardDeletePost(postId: string): Promise<void> {
 }
 
 // ─── SPACE YÖNETİMİ ───────────────────────────────────────────────────────────
+
+export async function deleteSpace(spaceId: string): Promise<void> {
+  // Önce bu space'e ait postları sil
+  const postsSnap = await getDocs(query(collection(db, 'posts'), where('spaceId', '==', spaceId)))
+  const batch = writeBatch(db)
+  postsSnap.docs.forEach(d => batch.delete(d.ref))
+  // Sonra space'i sil
+  batch.delete(doc(db, 'spaces', spaceId))
+  await batch.commit()
+}
+
+export async function updateSpace(spaceId: string, data: {
+  name?: string
+  description?: string
+  iconEmoji?: string
+  isPublic?: boolean
+  department?: string
+}): Promise<void> {
+  // Güvenli alanlar - slug ve channels değiştirilemez bu fonksiyonla
+  const safe = {
+    ...(data.name        !== undefined && { name: data.name.trim() }),
+    ...(data.description !== undefined && { description: data.description.trim() }),
+    ...(data.iconEmoji   !== undefined && { iconEmoji: data.iconEmoji }),
+    ...(data.isPublic    !== undefined && { isPublic: data.isPublic }),
+    ...(data.department  !== undefined && { department: data.department.trim() }),
+    updatedAt: serverTimestamp(),
+  }
+  await updateDoc(doc(db, 'spaces', spaceId), safe)
+}
+
 export async function createSpace(data: {
   name: string
   description: string

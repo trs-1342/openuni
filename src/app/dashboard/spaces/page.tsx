@@ -6,9 +6,9 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { useSpaces } from '@/hooks/useSpaces'
 import { useAuthStore } from '@/store/authStore'
 import { useUserProfile } from '@/hooks/useUserProfile'
-import { createSpace } from '@/lib/firestore'
+import { createSpace, updateSpace, deleteSpace } from '@/lib/firestore'
 import { CHANNEL_META, cn } from '@/lib/utils'
-import { Search, Users, Menu, Plus, X, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import { Search, Users, Menu, Plus, X, Loader2, CheckCircle, AlertCircle, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 const ADMIN_EMAIL = 'khalil.khattab@ogr.gelisim.edu.tr'
@@ -16,6 +16,125 @@ const ADMIN_EMAIL = 'khalil.khattab@ogr.gelisim.edu.tr'
 const EMOJI_PICKS = ['💻','⚡','🏛️','🧬','⚖️','📡','🎨','🏗️','📊','🚀','🔬','🎓','🏥','✈️','🎭','🌐','🔧','📐']
 
 // ─── Topluluk Oluştur Modal ───────────────────────────────────────────────────
+
+// ─── Edit Space Modal ─────────────────────────────────────────────────────────
+function EditSpaceModal({ space, onClose, onSaved }: { space: any; onClose: () => void; onSaved: () => void }) {
+  const [name,        setName]        = useState(space.name ?? '')
+  const [description, setDescription] = useState(space.description ?? '')
+  const [emoji,       setEmoji]       = useState(space.iconEmoji ?? '💻')
+  const [isPublic,    setIsPublic]    = useState(space.isPublic ?? true)
+  const [department,  setDepartment]  = useState(space.department ?? '')
+  const [saving,      setSaving]      = useState(false)
+  const [error,       setError]       = useState('')
+  const [done,        setDone]        = useState(false)
+
+  async function handleSave() {
+    if (!name.trim())        { setError('Topluluk adı boş olamaz.'); return }
+    if (!description.trim()) { setError('Açıklama boş olamaz.'); return }
+    setSaving(true); setError('')
+    try {
+      await updateSpace(space.id, { name: name.trim(), description: description.trim(), iconEmoji: emoji, isPublic, department: department.trim() })
+      setDone(true)
+      setTimeout(() => { onSaved(); onClose() }, 1000)
+    } catch (e: any) {
+      setError(e?.message ?? 'Güncellenemedi.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-[#131929] border border-surface-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-surface-border">
+          <h2 className="font-display font-semibold text-text-primary">Topluluğu Düzenle</h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text-secondary p-1 rounded transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-12">
+            <CheckCircle className="w-10 h-10 text-accent-green" />
+            <p className="font-medium text-text-primary">Topluluk güncellendi!</p>
+          </div>
+        ) : (
+          <div className="p-5 space-y-4">
+            {/* Emoji + İsim */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Topluluk Adı</label>
+              <div className="flex gap-2 items-center">
+                <div className="w-10 h-10 rounded-lg bg-surface border border-surface-border text-lg flex items-center justify-center shrink-0">{emoji}</div>
+                <input type="text" value={name} onChange={(e: any) => { setName(e.target.value); setError('') }}
+                  placeholder="Topluluk adı" className="input flex-1" maxLength={50} />
+              </div>
+              <div className="grid grid-cols-9 gap-1 mt-2">
+                {EMOJI_PICKS.map((e: any) => (
+                  <button key={e} type="button" onClick={() => setEmoji(e)}
+                    className={cn('w-8 h-8 rounded-lg text-base hover:bg-surface transition-all flex items-center justify-center border',
+                      emoji === e ? 'bg-brand/10 border-brand' : 'border-transparent hover:border-surface-border')}>
+                    {e}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Açıklama */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Açıklama</label>
+              <textarea value={description} onChange={(e: any) => { setDescription(e.target.value); setError('') }}
+                placeholder="Bu topluluk ne için?" rows={2}
+                className="input resize-none text-sm" maxLength={200} />
+              <p className="text-right text-2xs text-text-muted mt-1">{description.length}/200</p>
+            </div>
+
+            {/* Bölüm */}
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                İlgili Bölüm <span className="text-text-muted font-normal">(isteğe bağlı)</span>
+              </label>
+              <input type="text" value={department} onChange={(e: any) => setDepartment(e.target.value)}
+                placeholder="Örn: Bilgisayar Mühendisliği" className="input text-sm" maxLength={80} />
+            </div>
+
+            {/* Gizlilik */}
+            <div className="flex gap-2">
+              {[
+                { v: true,  label: '🌐 Herkese Açık', desc: 'Tüm öğrenciler görebilir' },
+                { v: false, label: '🔒 Özel',         desc: 'Yalnızca davetliler' },
+              ].map((opt: any) => (
+                <button key={String(opt.v)} type="button" onClick={() => setIsPublic(opt.v)}
+                  className={cn('flex-1 py-2.5 px-3 rounded-lg border text-left transition-all',
+                    isPublic === opt.v ? 'bg-brand/10 border-brand' : 'border-surface-border hover:border-surface-active')}>
+                  <p className={cn('text-xs font-medium', isPublic === opt.v ? 'text-brand' : 'text-text-secondary')}>{opt.label}</p>
+                  <p className="text-2xs text-text-muted mt-0.5">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-xs text-accent-red bg-accent-red/10 border border-accent-red/20 rounded-lg px-3 py-2.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />{error}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <button onClick={onClose} className="btn-secondary flex-1 py-2.5 text-sm">İptal</button>
+              <button onClick={handleSave} disabled={saving}
+                className={cn('flex-1 py-2.5 text-sm font-semibold rounded-lg bg-brand text-white hover:bg-brand/90 transition-all flex items-center justify-center gap-2',
+                  saving && 'opacity-70 cursor-not-allowed')}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {saving ? 'Kaydediliyor...' : 'Kaydet'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function CreateSpaceModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const { user } = useAuthStore()
   const [name,        setName]        = useState('')
@@ -187,6 +306,9 @@ export default function SpacesPage() {
   const [query,       setQuery]       = useState('')
   const [drawerOpen,  setDrawerOpen]  = useState(false)
   const [showCreate,  setShowCreate]  = useState(false)
+  const [editingSpace,  setEditingSpace]  = useState<any>(null)
+  const [deletingSpace, setDeletingSpace] = useState<any>(null)
+  const [deleting,      setDeleting]      = useState(false)
   const searchParams = useSearchParams()
 
   // Sidebar'dan ?create=1 ile gelince modal'ı aç
@@ -221,6 +343,54 @@ export default function SpacesPage() {
           onClose={() => setShowCreate(false)}
           onCreated={() => {}}
         />
+      )}
+      {editingSpace && (
+        <EditSpaceModal
+          space={editingSpace}
+          onClose={() => setEditingSpace(null)}
+          onSaved={() => setEditingSpace(null)}
+        />
+      )}
+      {deletingSpace && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setDeletingSpace(null)} />
+          <div className="relative bg-[#131929] border border-surface-border rounded-2xl w-full max-w-sm shadow-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-accent-red/10 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-accent-red" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-text-primary">Topluluğu Sil</h3>
+                <p className="text-xs text-text-muted mt-0.5">Bu işlem geri alınamaz</p>
+              </div>
+            </div>
+            <p className="text-sm text-text-secondary mb-2">
+              <strong className="text-text-primary">{deletingSpace.name}</strong> topluluğunu ve
+              tüm gönderilerini silmek istediğinden emin misin?
+            </p>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setDeletingSpace(null)} className="btn-secondary flex-1 py-2.5 text-sm">
+                İptal
+              </button>
+              <button
+                disabled={deleting}
+                onClick={async () => {
+                  setDeleting(true)
+                  try {
+                    await deleteSpace(deletingSpace.id)
+                    setDeletingSpace(null)
+                  } catch (e: any) {
+                    alert(e?.message ?? 'Silinemedi.')
+                  } finally { setDeleting(false) }
+                }}
+                className="flex-1 py-2.5 text-sm font-semibold rounded-lg bg-accent-red text-white hover:bg-accent-red/90 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {deleting ? 'Siliniyor...' : 'Evet, Sil'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <main className="flex-1 overflow-y-auto pb-24 lg:pb-6">
@@ -287,7 +457,26 @@ export default function SpacesPage() {
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filtered.map(space => (
-                  <Link key={space.id} href={`/dashboard/spaces/${space.slug}`}>
+                  <div key={space.id} className="relative group">
+                    {canCreate && (
+                      <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                        <button
+                          onClick={(e: any) => { e.preventDefault(); e.stopPropagation(); setEditingSpace(space) }}
+                          className="p-1.5 rounded-lg bg-surface border border-surface-border hover:border-brand hover:text-brand text-text-muted transition-colors"
+                          title="Düzenle"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e: any) => { e.preventDefault(); e.stopPropagation(); setDeletingSpace(space) }}
+                          className="p-1.5 rounded-lg bg-surface border border-surface-border hover:border-accent-red hover:text-accent-red text-text-muted transition-colors"
+                          title="Sil"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                    <Link href={`/dashboard/spaces/${space.slug}`}>
                     <div className="card hover:bg-surface-hover hover:border-surface-active transition-all duration-200 cursor-pointer h-full">
                       <div className="flex items-start gap-3 mb-4">
                         <div className="w-12 h-12 rounded-xl bg-surface flex items-center justify-center text-2xl border border-surface-border shrink-0">
@@ -320,7 +509,8 @@ export default function SpacesPage() {
                         )}
                       </div>
                     </div>
-                  </Link>
+                    </Link>
+                  </div>
                 ))}
               </div>
             </section>

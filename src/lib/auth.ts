@@ -58,28 +58,59 @@ export async function registerUser(data: RegisterData): Promise<User> {
     await updateProfile(user, { displayName: data.displayName })
   } catch { /* kritik değil */ }
 
-  // 3) Doğrulama e-postası gönder — hata olsa bile devam et
+  // 3) Kendi API route'umuz ile doğrulama e-postası gönder
   try {
-    await sendEmailVerification(user)
+    // Firebase'den doğrulama linki üret
+    const { sendEmailVerification: fbSendVerification } = await import('firebase/auth')
+    const actionCodeSettings = {
+      url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://openigu.vercel.app'}/auth/verify-email`,
+      handleCodeInApp: false,
+    }
+    await fbSendVerification(user, actionCodeSettings)
+    // Kendi güzel emailimizi de gönder (background'da)
+    fetch('/api/send-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email:            user.email,
+        displayName:      data.displayName,
+        verificationLink: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://openigu.vercel.app'}/auth/verify-email`,
+      }),
+    }).catch(() => {/* sessizce hata yut */})
   } catch { /* e-posta sonra tekrar gönderilebilir */ }
 
   // 4) Firestore'a kullanıcı profili kaydet — hata olsa bile auth başarılı sayılır
   try {
+    const isTeacher = data.extra?.userType === 'ogretmen'
     await setDoc(doc(db, 'users', user.uid), {
-      uid:          user.uid,
-      email:        user.email,
-      displayName:  data.displayName,
-      department:   data.department,
-      grade:        data.grade === 'hazirlik' ? 'hazirlik' : data.grade ? parseInt(data.grade) : null,
-      studentId:    data.extra?.studentId ?? null,
-      userType:     data.extra?.userType ?? 'lisans',
-      fakulte:      data.extra?.fakulte ?? null,
-      role:         'student',
-      bookmarks:    [],
-      isVerified:   false,
-      joinedAt:     serverTimestamp(),
-      lastActiveAt: serverTimestamp(),
+      uid:             user.uid,
+      email:           user.email,
+      displayName:     data.displayName,
+      department:      data.department,
+      grade:           data.grade === 'hazirlik' ? 'hazirlik' : data.grade ? parseInt(data.grade) : null,
+      studentId:       data.extra?.studentId ?? null,
+      // Öğretmen onay bekliyor: userType geçici olarak 'pending_teacher'
+      userType:        isTeacher ? 'pending_teacher' : (data.extra?.userType ?? 'lisans'),
+      fakulte:         data.extra?.fakulte ?? null,
+      role:            'student',
+      bookmarks:       [],
+      isVerified:      false,
+      teacherApproved: isTeacher ? false : null,
+      joinedAt:        serverTimestamp(),
+      lastActiveAt:    serverTimestamp(),
     })
+    // Öğretmen ise onay kuyruğuna ekle
+    if (isTeacher) {
+      await setDoc(doc(db, 'teacherApprovals', user.uid), {
+        uid:         user.uid,
+        email:       user.email,
+        displayName: data.displayName,
+        department:  data.department,
+        fakulte:     data.extra?.fakulte ?? '',
+        status:      'pending',
+        createdAt:   serverTimestamp(),
+      })
+    }
   } catch (firestoreErr) {
     // Firestore hatası kayıt akışını kesmez; kullanıcı auth'da oluşturuldu
     // Profil daha sonra ilk girişte tekrar yazılabilir
@@ -102,10 +133,21 @@ export async function logoutUser(): Promise<void> {
   await signOut(auth)
 }
 
-export async function resendVerificationEmail(): Promise<void> {
+export async function resendVerificationEmail(displayName?: string): Promise<void> {
   const user = auth.currentUser
   if (!user) throw new Error('Aktif oturum bulunamadı.')
+  // Firebase native gönderim
   await sendEmailVerification(user)
+  // Kendi güzel emailimizi de gönder
+  fetch('/api/send-verification', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email:            user.email,
+      displayName:      displayName ?? user.displayName,
+      verificationLink: `${typeof window !== 'undefined' ? window.location.origin : 'https://openigu.vercel.app'}/auth/verify-email`,
+    }),
+  }).catch(() => {})
 }
 
 export function subscribeToAuthState(callback: (user: User | null) => void) {

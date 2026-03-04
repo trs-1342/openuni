@@ -10,6 +10,7 @@ import { useUserProfile } from '@/hooks/useUserProfile'
 import {
   getAllUsers, getAllPosts, hardDeletePost, deletePost,
   banUser, unbanUser, muteUser, unmuteUser, setUserRole,
+  getPendingTeachers, approveTeacher, rejectTeacher,
 } from '@/lib/firestore'
 import { timeAgo, cn } from '@/lib/utils'
 import type { User, Post } from '@/types'
@@ -17,10 +18,10 @@ import {
   ShieldAlert, Users, FileText, Image, Menu, Search,
   Ban, VolumeX, Volume2, ShieldCheck, ShieldOff, Trash2,
   AlertTriangle, CheckCircle, X, Loader2, RefreshCw,
-  ChevronDown, Clock, Filter,
+  ChevronDown, Clock, Filter, GraduationCap, Check, XCircle,
 } from 'lucide-react'
 
-const ADMIN_EMAIL = 'khalil.khattab@ogr.gelisim.edu.tr'
+const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? ''
 
 // ─── Ban/Mute Dialog ──────────────────────────────────────────────────────────
 function ModerationDialog({
@@ -226,7 +227,9 @@ export default function AdminPage() {
   const { user: firebaseUser } = useAuthStore()
   const { profile } = useUserProfile()
 
-  const [tab,        setTab]        = useState<'users' | 'posts'>('users')
+  const [tab,        setTab]        = useState<'users' | 'posts' | 'teachers'>('users')
+  const [pendingTeachers, setPendingTeachers] = useState<any[]>([])
+  const [teachersLoading, setTeachersLoading] = useState(false)
   const [users,      setUsers]      = useState<User[]>([])
   const [posts,      setPosts]      = useState<Post[]>([])
   const [isLoading,  setIsLoading]  = useState(true)
@@ -236,7 +239,8 @@ export default function AdminPage() {
   const [dialog, setDialog] = useState<{
     user: User; action: 'ban' | 'mute' | 'unban' | 'unmute'
   } | null>(null)
-  const [roleFilter, setRoleFilter] = useState<'all' | 'student' | 'moderator' | 'banned' | 'muted'>('all')
+  const [roleFilter,  setRoleFilter]  = useState<'all' | 'student' | 'moderator' | 'banned' | 'muted'>('all')
+  const [typeFilter,  setTypeFilter]  = useState<'all' | 'lisans' | 'onlisans' | 'ogretmen' | 'pending_teacher' | 'diger'>('all')
 
   const isAdmin = firebaseUser?.email === ADMIN_EMAIL || profile?.role === 'admin'
 
@@ -244,6 +248,7 @@ export default function AdminPage() {
     if (!isAdmin && profile) { router.replace('/dashboard'); return }
     if (!isAdmin) return
     load()
+    loadTeachers()
   }, [isAdmin, profile])
 
   async function load() {
@@ -252,6 +257,34 @@ export default function AdminPage() {
       const [u, p] = await Promise.all([getAllUsers(), getAllPosts()])
       setUsers(u); setPosts(p)
     } finally { setIsLoading(false) }
+  }
+
+  async function loadTeachers() {
+    setTeachersLoading(true)
+    try {
+      const t = await getPendingTeachers()
+      setPendingTeachers(t)
+    } finally { setTeachersLoading(false) }
+  }
+
+  async function handleTeacherAction(teacher: any, action: 'approve' | 'reject') {
+    try {
+      if (action === 'approve') {
+        await approveTeacher(teacher.uid)
+      } else {
+        await rejectTeacher(teacher.uid)
+      }
+      // Email gönder
+      await fetch('/api/teacher-approval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, email: teacher.email, displayName: teacher.displayName }),
+      })
+      showToast(action === 'approve' ? 'Öğretmen onaylandı ✓' : 'Başvuru reddedildi', action === 'approve' ? 'ok' : 'err')
+      loadTeachers()
+    } catch (e: any) {
+      showToast(e?.message ?? 'Hata oluştu', 'err')
+    }
   }
 
   function showToast(msg: string, type: 'ok' | 'err' = 'ok') {
@@ -296,7 +329,8 @@ export default function AdminPage() {
       roleFilter === 'student'   ? u.role === 'student' :
       roleFilter === 'banned'    ? (u.isBanned && (!u.banUntil || new Date(u.banUntil) > now)) :
       roleFilter === 'muted'     ? (u.isMuted  && (!u.muteUntil || new Date(u.muteUntil) > now)) : true
-    return matchSearch && matchFilter
+    const matchType = typeFilter === 'all' ? true : u.userType === typeFilter
+    return matchSearch && matchFilter && matchType
   })
 
   const filteredPosts = posts.filter((p: any) =>
@@ -391,8 +425,9 @@ export default function AdminPage() {
           {/* Tab seçici */}
           <div className="flex gap-1 bg-surface border border-surface-border rounded-lg p-1">
             {[
-              { id: 'users', icon: Users,    label: 'Kullanıcılar' },
-              { id: 'posts', icon: FileText, label: 'Gönderiler' },
+              { id: 'users',    icon: Users,          label: 'Kullanıcılar' },
+              { id: 'posts',    icon: FileText,        label: 'Gönderiler' },
+              { id: 'teachers', icon: GraduationCap,  label: `Öğretmen Onayı${pendingTeachers.length > 0 ? ` (${pendingTeachers.length})` : ''}` },
             ].map(t => {
               const Icon = t.icon
               return (
@@ -416,21 +451,42 @@ export default function AdminPage() {
 
           {/* Kullanıcı filtre çipleri */}
           {tab === 'users' && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <Filter className="w-3.5 h-3.5 text-text-muted shrink-0" />
-              {([
-                { id: 'all', label: 'Tümü' },
-                { id: 'student', label: 'Öğrenci' },
-                { id: 'moderator', label: 'Moderatör' },
-                { id: 'banned', label: '🚫 Engelli' },
-                { id: 'muted', label: '🔇 Susturuldu' },
-              ] as const).map(f => (
-                <button key={f.id} onClick={() => setRoleFilter(f.id)}
-                  className={cn('px-2.5 py-1 rounded-full text-xs border transition-all',
-                    roleFilter === f.id ? 'bg-brand/10 border-brand text-brand' : 'border-surface-border text-text-muted hover:border-surface-active')}>
-                  {f.label}
-                </button>
-              ))}
+            <div className="space-y-2">
+              {/* Rol filtresi */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Filter className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                {([
+                  { id: 'all',       label: 'Tümü' },
+                  { id: 'student',   label: 'Öğrenci' },
+                  { id: 'moderator', label: 'Moderatör' },
+                  { id: 'banned',    label: '🚫 Engelli' },
+                  { id: 'muted',     label: '🔇 Susturuldu' },
+                ] as const).map(f => (
+                  <button key={f.id} onClick={() => setRoleFilter(f.id)}
+                    className={cn('px-2.5 py-1 rounded-full text-xs border transition-all',
+                      roleFilter === f.id ? 'bg-brand/10 border-brand text-brand' : 'border-surface-border text-text-muted hover:border-surface-active')}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              {/* Kullanıcı tipi filtresi */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-2xs text-text-muted shrink-0 w-[18px]" />
+                {([
+                  { id: 'all',             label: 'Tüm Tipler' },
+                  { id: 'lisans',          label: '🎓 Lisans' },
+                  { id: 'onlisans',        label: '📚 Ön Lisans' },
+                  { id: 'ogretmen',        label: '👨‍🏫 Öğretmen' },
+                  { id: 'pending_teacher', label: '⏳ Onay Bekleyen' },
+                  { id: 'diger',           label: '👤 Diğer' },
+                ] as const).map(f => (
+                  <button key={f.id} onClick={() => setTypeFilter(f.id)}
+                    className={cn('px-2.5 py-1 rounded-full text-xs border transition-all',
+                      typeFilter === f.id ? 'bg-accent-purple/10 border-accent-purple text-accent-purple' : 'border-surface-border text-text-muted hover:border-surface-active')}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -447,7 +503,7 @@ export default function AdminPage() {
                   ))
               }
             </div>
-          ) : (
+          ) : tab === 'posts' ? (
             <div className="space-y-2">
               <p className="text-xs text-text-muted">{filteredPosts.length} gönderi</p>
               {filteredPosts.length === 0
@@ -457,6 +513,54 @@ export default function AdminPage() {
                       onDelete={id => setPosts((prev: any) => prev.filter((x: any) => x.id !== id))} />
                   ))
               }
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-text-muted">{pendingTeachers.length} bekleyen başvuru</p>
+                <button onClick={loadTeachers} disabled={teachersLoading}
+                  className="text-xs text-text-muted hover:text-text-secondary flex items-center gap-1">
+                  <RefreshCw className={cn('w-3 h-3', teachersLoading && 'animate-spin')} />Yenile
+                </button>
+              </div>
+              {teachersLoading ? (
+                <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-brand animate-spin" /></div>
+              ) : pendingTeachers.length === 0 ? (
+                <div className="text-center py-12 card">
+                  <GraduationCap className="w-8 h-8 text-text-muted mx-auto mb-3" />
+                  <p className="text-sm text-text-secondary font-medium">Bekleyen başvuru yok</p>
+                  <p className="text-xs text-text-muted mt-1">Yeni öğretmen başvuruları burada görünecek</p>
+                </div>
+              ) : (
+                pendingTeachers.map((t: any) => (
+                  <div key={t.uid} className="card space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-accent-purple/10 border border-accent-purple/20 flex items-center justify-center shrink-0">
+                        <GraduationCap className="w-5 h-5 text-accent-purple" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-text-primary">{t.displayName}</p>
+                        <p className="text-xs text-text-muted mt-0.5">{t.email}</p>
+                        <div className="flex flex-wrap gap-2 mt-1.5">
+                          {t.fakulte && <span className="text-2xs bg-surface border border-surface-border rounded px-2 py-0.5 text-text-muted">{t.fakulte}</span>}
+                          {t.department && <span className="text-2xs bg-surface border border-surface-border rounded px-2 py-0.5 text-text-muted">{t.department}</span>}
+                          <span className="text-2xs bg-accent-amber/10 border border-accent-amber/20 rounded px-2 py-0.5 text-accent-amber">Bekliyor</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-1 border-t border-surface-border">
+                      <button onClick={() => handleTeacherAction(t, 'reject')}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg border border-accent-red/30 text-accent-red hover:bg-accent-red/10 transition-all">
+                        <XCircle className="w-3.5 h-3.5" />Reddet
+                      </button>
+                      <button onClick={() => handleTeacherAction(t, 'approve')}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-lg bg-accent-green/10 border border-accent-green/20 text-accent-green hover:bg-accent-green/20 transition-all">
+                        <Check className="w-3.5 h-3.5" />Onayla
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>
