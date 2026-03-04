@@ -54,7 +54,7 @@ export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: 
             {/* Tags */}
             {post.tags.length > 0 && variant === 'default' && (
               <div className="flex flex-wrap gap-1 mt-2">
-                {post.tags.map((tag) => (
+                {post.tags.map((tag: any) => (
                   <span key={tag} className="text-2xs px-2 py-0.5 rounded-sm bg-surface text-text-muted border border-surface-border">
                     #{tag}
                   </span>
