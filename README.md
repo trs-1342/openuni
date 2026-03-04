@@ -19,7 +19,7 @@
 
 ### 1. Bağımlılıkları kur
 
-projeyi [indirin](https://codeload.github.com/trs-1342/openuni/zip/refs/heads/main)
+projeyi [indirin](https://codeload.github.com/trs-1342/openuni/zip/refs/heads/main)<br/>
 projenin klasörüne girin ve komutu çalıştırın:
 
 ```bash
