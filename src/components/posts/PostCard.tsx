@@ -65,7 +65,7 @@ export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: 
             {/* Attachments */}
             {post.attachments.length > 0 && (
               <div className="mt-3 space-y-1.5">
-                {post.attachments.map((att) => {
+                {post.attachments.map((att: any) => {
                   const isImage = att.type === 'image'
                   const isPdf   = att.type === 'pdf'
                   const Icon    = isImage ? ImageIcon : isPdf ? FileText : File

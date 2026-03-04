@@ -35,13 +35,13 @@ export default function AboutPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="card border-accent-red/20 space-y-3">
             <h3 className="font-semibold text-text-primary">❌ Eski Yöntem</h3>
-            {['Duyurular WhatsApp’ta kayboluyor','Ders notları farklı linklerde dağınık','Yeni öğrenciler hiçbir şeyi bulamıyor','Moderasyon yok, spam ve kargaşa var'].map(i => (
+            {['Duyurular WhatsApp’ta kayboluyor','Ders notları farklı linklerde dağınık','Yeni öğrenciler hiçbir şeyi bulamıyor','Moderasyon yok, spam ve kargaşa var'].map((i: any) => (
               <p key={i} className="text-sm text-text-secondary flex items-start gap-2"><span className="text-accent-red mt-0.5 shrink-0">–</span>{i}</p>
             ))}
           </div>
           <div className="card border-accent-green/20 space-y-3">
             <h3 className="font-semibold text-text-primary">✅ OpenUni ile</h3>
-            {['Duyurular kanallara göre arşivleniyor','Kaynaklar kalıcı arşiv kanalında','Yeni öğrenci kılavuz kanalıyla hızlıca oryante oluyor','Öğrenci moderatörler içeriği denetliyor'].map(i => (
+            {['Duyurular kanallara göre arşivleniyor','Kaynaklar kalıcı arşiv kanalında','Yeni öğrenci kılavuz kanalıyla hızlıca oryante oluyor','Öğrenci moderatörler içeriği denetliyor'].map((i: any) => (
               <p key={i} className="text-sm text-text-secondary flex items-start gap-2"><span className="text-accent-green mt-0.5 shrink-0">+</span>{i}</p>
             ))}
           </div>
@@ -51,7 +51,7 @@ export default function AboutPage() {
       <section>
         <h2 className="font-display font-bold text-xl text-text-primary text-center mb-8">Değerlerimiz</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {values.map(v => {
+          {values.map((v: any) => {
             const Icon = v.icon
             return (
               <div key={v.title} className="card">

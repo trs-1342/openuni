@@ -75,7 +75,7 @@ export default function LoginPage() {
               { icon: '🗂️', label: 'Kalıcı kaynak arşivi' },
               { icon: '📚', label: 'Akademik destek kanalı' },
               { icon: '🔒', label: 'Sadece IGÜ öğrencilerine özel' },
-            ].map((item) => (
+            ].map((item: any) => (
               <div key={item.label} className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-surface border border-surface-border flex items-center justify-center text-base shrink-0">
                   {item.icon}

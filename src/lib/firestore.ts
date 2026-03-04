@@ -201,7 +201,7 @@ export async function createPost(data: {
   if (spaceSnap.exists()) {
     const spaceData = spaceSnap.data()
     const channels: Channel[] = spaceData.channels ?? []
-    const updated = channels.map((ch) =>
+    const updated = channels.map((ch: any) =>
       ch.id === data.channelId ? { ...ch, postCount: (ch.postCount ?? 0) + 1 } : ch
     )
     await updateDoc(spaceRef, { channels: updated })

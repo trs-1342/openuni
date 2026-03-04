@@ -72,7 +72,7 @@ function ModerationDialog({
           <>
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5">Gerekçe</label>
-              <textarea value={reason} onChange={e => setReason(e.target.value)}
+              <textarea value={reason} onChange={(e: any) => setReason(e.target.value)}
                 placeholder="Neden bu işlemi yapıyorsunuz?" rows={2}
                 className="input resize-none text-sm" />
             </div>
@@ -107,10 +107,7 @@ function ModerationDialog({
 }
 
 // ─── Kullanıcı Satırı ─────────────────────────────────────────────────────────
-function UserRow({ user: u, onAction }: {
-  user: User
-  onAction: (u: User, action: 'ban' | 'mute' | 'unban' | 'unmute' | 'mod' | 'unmod') => void
-}) {
+function UserRow({ user: u, onAction }: any) {
   const [open, setOpen] = useState(false)
   const isBanned = u.isBanned && (!u.banUntil || new Date(u.banUntil) > new Date())
   const isMuted  = u.isMuted  && (!u.muteUntil || new Date(u.muteUntil) > new Date())
@@ -118,7 +115,7 @@ function UserRow({ user: u, onAction }: {
   return (
     <div className="border border-surface-border rounded-xl overflow-hidden">
       {/* Ana satır */}
-      <div className="flex items-center gap-3 p-3" onClick={() => setOpen(o => !o)}>
+      <div className="flex items-center gap-3 p-3" onClick={() => setOpen((o: any) => !o)}>
         <Avatar name={u.displayName} size="sm" className="shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -190,7 +187,7 @@ function UserRow({ user: u, onAction }: {
 }
 
 // ─── Post Satırı ─────────────────────────────────────────────────────────────
-function PostRow({ post: p, onDelete }: { post: Post; onDelete: (id: string) => void }) {
+function PostRow({ post: p, onDelete }: { post: any; onDelete: (id: string) => any; [k:string]:any }) {
   const [deleting, setDeleting] = useState(false)
 
   async function handleDelete() {
@@ -290,7 +287,7 @@ export default function AdminPage() {
   }
 
   // Filtre + arama
-  const filteredUsers = users.filter(u => {
+  const filteredUsers = users.filter((u: any) => {
     const matchSearch = !search || u.displayName.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
     const now = new Date()
     const matchFilter =
@@ -302,7 +299,7 @@ export default function AdminPage() {
     return matchSearch && matchFilter
   })
 
-  const filteredPosts = posts.filter(p =>
+  const filteredPosts = posts.filter((p: any) =>
     !search || p.title.toLowerCase().includes(search.toLowerCase()) || p.author.displayName.toLowerCase().includes(search.toLowerCase())
   )
 
@@ -310,11 +307,11 @@ export default function AdminPage() {
 
   const stats = {
     total:    users.length,
-    mods:     users.filter(u => u.role === 'moderator').length,
-    banned:   users.filter(u => u.isBanned).length,
-    muted:    users.filter(u => u.isMuted).length,
+    mods:     users.filter((u: any) => u.role === 'moderator').length,
+    banned:   users.filter((u: any) => u.isBanned).length,
+    muted:    users.filter((u: any) => u.isMuted).length,
     posts:    posts.length,
-    archived: posts.filter(p => p.status === 'archived').length,
+    archived: posts.filter((p: any) => p.status === 'archived').length,
   }
 
   return (
@@ -411,7 +408,7 @@ export default function AdminPage() {
           {/* Arama */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+            <input type="text" value={search} onChange={(e: any) => setSearch(e.target.value)}
               placeholder={tab === 'users' ? 'İsim veya e-posta ara...' : 'Başlık veya yazar ara...'}
               className="input pl-10" />
             {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"><X className="w-4 h-4" /></button>}
@@ -445,7 +442,7 @@ export default function AdminPage() {
               <p className="text-xs text-text-muted">{filteredUsers.length} kullanıcı</p>
               {filteredUsers.length === 0
                 ? <div className="text-center py-8 text-text-muted text-sm">Sonuç bulunamadı.</div>
-                : filteredUsers.map(u => (
+                : filteredUsers.map((u: any) => (
                     <UserRow key={u.uid} user={u} onAction={handleUserAction} />
                   ))
               }
@@ -455,9 +452,9 @@ export default function AdminPage() {
               <p className="text-xs text-text-muted">{filteredPosts.length} gönderi</p>
               {filteredPosts.length === 0
                 ? <div className="text-center py-8 text-text-muted text-sm">Sonuç bulunamadı.</div>
-                : filteredPosts.map(p => (
+                : filteredPosts.map((p: any) => (
                     <PostRow key={p.id} post={p}
-                      onDelete={id => setPosts(prev => prev.filter(x => x.id !== id))} />
+                      onDelete={id => setPosts((prev: any) => prev.filter((x: any) => x.id !== id))} />
                   ))
               }
             </div>
