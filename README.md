@@ -19,7 +19,8 @@
 
 ### 1. Bağımlılıkları kur
 
-projeyi [indirin](/trs-1342/openuni/archive/refs/heads/main.zip)
+projeyi [indirin](https://codeload.github.com/trs-1342/openuni/zip/refs/heads/main)
+projenin klasörüne girin ve komutu çalıştırın:
 
 ```bash
 npm install
