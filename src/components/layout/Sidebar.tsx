@@ -36,61 +36,129 @@ const STATIC_PAGES = [
 type SearchResult =
   | { kind: 'page';    label: string; href: string; icon: any; category: string }
   | { kind: 'channel'; label: string; href: string; spaceName: string; spaceEmoji: string; channelType: string; category: string }
+  | { kind: 'post';    label: string; href: string; spaceName: string; spaceEmoji: string; fileCount: number; tags: string[]; category: string }
+  | { kind: 'tag';     label: string; href: string; tag: string; spaceName: string; spaceEmoji: string; category: string }
 
-function buildResults(query: string, spaces: Space[]): SearchResult[] {
+function buildResults(query: string, spaces: Space[], posts: any[] = []): SearchResult[] {
   if (!query.trim()) return []
-  const q = query.toLowerCase().trim()
+
+  const isTagSearch  = query.startsWith('#')
+  const isFileSearch = query.toLowerCase().startsWith('dosya:') || query.toLowerCase().startsWith('pdf:')
+  const cleanQ       = isTagSearch ? query.slice(1).trim().toLowerCase()
+                     : isFileSearch ? (query.split(':')[1]?.trim() ?? '').toLowerCase()
+                     : query.toLowerCase().trim()
+  const q = cleanQ
 
   const results: SearchResult[] = []
 
+  // ── Tag araması: #javascript ──────────────────────────────────────────────
+  if (isTagSearch && q) {
+    posts.forEach((p: any) => {
+      const tags: string[] = p.tags ?? []
+      const matchedTags = tags.filter(t => t.toLowerCase().includes(q))
+      if (matchedTags.length > 0) {
+        results.push({
+          kind: 'tag',
+          label: p.title,
+          href: `/dashboard/spaces/${p._space?.slug}/${p._channel?.slug}/${p.id}`,
+          tag: matchedTags[0],
+          spaceName: p._space?.name ?? '',
+          spaceEmoji: p._space?.iconEmoji ?? '',
+          category: 'Etiket',
+        })
+      }
+    })
+    return results.slice(0, 12)
+  }
+
+  // ── Dosya/PDF araması: dosya:fizik veya pdf:fizik ─────────────────────────
+  if (isFileSearch && q) {
+    posts.forEach((p: any) => {
+      const atts: any[] = p.attachments ?? []
+      const matchedFiles = atts.filter((a: any) =>
+        a.name?.toLowerCase().includes(q) || a.type === 'pdf'
+      )
+      if (matchedFiles.length > 0) {
+        results.push({
+          kind: 'post',
+          label: p.title,
+          href: `/dashboard/spaces/${p._space?.slug}/${p._channel?.slug}/${p.id}`,
+          spaceName: p._space?.name ?? '',
+          spaceEmoji: p._space?.iconEmoji ?? '',
+          fileCount: matchedFiles.length,
+          tags: p.tags ?? [],
+          category: 'Dosya',
+        })
+      }
+    })
+    if (results.length === 0) {
+      // Tüm dosyalı postları getir
+      posts.forEach((p: any) => {
+        if ((p.attachments?.length ?? 0) > 0) {
+          results.push({
+            kind: 'post',
+            label: p.title,
+            href: `/dashboard/spaces/${p._space?.slug}/${p._channel?.slug}/${p.id}`,
+            spaceName: p._space?.name ?? '',
+            spaceEmoji: p._space?.iconEmoji ?? '',
+            fileCount: p.attachments?.length ?? 0,
+            tags: p.tags ?? [],
+            category: 'Dosya',
+          })
+        }
+      })
+    }
+    return results.slice(0, 12)
+  }
+
+  // ── Normal arama ──────────────────────────────────────────────────────────
   // 1. Statik sayfalar
   STATIC_PAGES.forEach(page => {
-    const hit =
-      page.label.toLowerCase().includes(q) ||
-      page.keywords.some(k => k.includes(q))
+    const hit = page.label.toLowerCase().includes(q) || page.keywords.some(k => k.includes(q))
     if (hit) results.push({ kind: 'page', label: page.label, href: page.href, icon: page.icon, category: page.category })
   })
 
   // 2. Topluluklar
   spaces.forEach(space => {
     const spaceMatch = space.name.toLowerCase().includes(q) || space.description?.toLowerCase().includes(q)
-
-    // Topluluk eşleşiyorsa ilk kanalına git
     if (spaceMatch) {
       const firstCh = space.channels[0]
-      if (firstCh) {
-        results.push({
-          kind: 'channel',
-          label: space.name,
-          href: `/dashboard/spaces/${space.slug}/${firstCh.slug}`,
-          spaceName: space.name,
-          spaceEmoji: space.iconEmoji,
-          channelType: firstCh.type,
-          category: 'Topluluk',
-        })
-      }
+      if (firstCh) results.push({
+        kind: 'channel', label: space.name,
+        href: `/dashboard/spaces/${space.slug}/${firstCh.slug}`,
+        spaceName: space.name, spaceEmoji: space.iconEmoji ?? '',
+        channelType: firstCh.type, category: 'Topluluk',
+      })
     }
-
-    // 3. Kanallar
     space.channels.forEach(ch => {
       const chMatch =
         ch.name.toLowerCase().includes(q) ||
-        CHANNEL_META[ch.type]?.label?.toLowerCase().includes(q)
-      if (chMatch && !spaceMatch) {
-        results.push({
-          kind: 'channel',
-          label: ch.name,
-          href: `/dashboard/spaces/${space.slug}/${ch.slug}`,
-          spaceName: space.name,
-          spaceEmoji: space.iconEmoji,
-          channelType: ch.type,
-          category: 'Kanal',
-        })
-      }
+        CHANNEL_META[ch.type as keyof typeof CHANNEL_META]?.label?.toLowerCase().includes(q)
+      if (chMatch && !spaceMatch) results.push({
+        kind: 'channel', label: ch.name,
+        href: `/dashboard/spaces/${space.slug}/${ch.slug}`,
+        spaceName: space.name, spaceEmoji: space.iconEmoji ?? '',
+        channelType: ch.type, category: 'Kanal',
+      })
     })
   })
 
-  return results.slice(0, 10)
+  // 3. Gönderi başlığı ve içeriği
+  if (q.length >= 2) {
+    posts.forEach((p: any) => {
+      const hit = p.title?.toLowerCase().includes(q) || p.content?.toLowerCase().includes(q) ||
+                  (p.tags ?? []).some((t: string) => t.toLowerCase().includes(q))
+      if (hit) results.push({
+        kind: 'post', label: p.title,
+        href: `/dashboard/spaces/${p._space?.slug}/${p._channel?.slug}/${p.id}`,
+        spaceName: p._space?.name ?? '', spaceEmoji: p._space?.iconEmoji ?? '',
+        fileCount: p.attachments?.length ?? 0, tags: p.tags ?? [],
+        category: 'Gönderi',
+      })
+    })
+  }
+
+  return results.slice(0, 14)
 }
 
 // ─── Arama overlay ────────────────────────────────────────────────────────────
@@ -102,11 +170,45 @@ interface SearchOverlayProps {
 function SearchOverlay({ spaces, onClose }: SearchOverlayProps) {
   const router  = useRouter()
   const [query, setQuery]       = useState('')
-  const [active, setActive]     = useState(0)  // klavye cursor
+  const [active, setActive]     = useState(0)
+  const [posts,  setPosts]      = useState<any[]>([])
+  const [postsLoading, setPostsLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef  = useRef<HTMLUListElement>(null)
 
-  const results = buildResults(query, spaces)
+  // # ile başlıyorsa tag modu, dosya: ile başlıyorsa dosya modu
+  const isTagSearch  = query.startsWith('#')
+  const isFileSearch = query.toLowerCase().startsWith('dosya:') || query.toLowerCase().startsWith('pdf:')
+  const cleanQuery   = isTagSearch ? query.slice(1).trim() : isFileSearch ? query.split(':')[1]?.trim() ?? '' : query
+
+  // Post/dosya araması için Firestore çağrısı
+  useEffect(() => {
+    if (!query.trim() || query.length < 2) { setPosts([]); return }
+    if (!isTagSearch && !isFileSearch && query.length < 3) return
+
+    setPostsLoading(true)
+    const timer = setTimeout(async () => {
+      try {
+        const { getRecentPostsForUser } = await import('@/lib/firestore')
+        // Tüm space'lerden son 50 post çek, client'ta filtrele
+        const allPosts: any[] = []
+        for (const space of spaces.slice(0, 8)) {
+          for (const ch of space.channels.slice(0, 6)) {
+            try {
+              const { getPosts } = await import('@/lib/firestore')
+              const ps = await getPosts(ch.id, 20)
+              allPosts.push(...ps.map((p: any) => ({ ...p, _space: space, _channel: ch })))
+            } catch {}
+          }
+        }
+        setPosts(allPosts)
+      } catch {}
+      setPostsLoading(false)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [query, spaces])
+
+  const results = buildResults(query, spaces, posts)
 
   // Input'a odaklan
   useEffect(() => { inputRef.current?.focus() }, [])
@@ -181,7 +283,7 @@ function SearchOverlay({ spaces, onClose }: SearchOverlayProps) {
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Sayfa, kanal veya topluluk ara..."
+              placeholder="Sayfa, kanal, gönderi ara... | #etiket | dosya: veya pdf:"
               className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted outline-none"
             />
             <div className="flex items-center gap-1.5 shrink-0">
@@ -190,6 +292,19 @@ function SearchOverlay({ spaces, onClose }: SearchOverlayProps) {
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
+          </div>
+
+          {/* Arama ipuçları */}
+          <div className="px-4 py-2 border-b border-surface-border flex flex-wrap gap-1.5">
+            {[
+              { label: '#etiket', color: 'text-brand' },
+              { label: 'dosya:', color: 'text-accent-amber' },
+              { label: 'pdf:', color: 'text-accent-red' },
+            ].map(tip => (
+              <button key={tip.label} onClick={() => {}} className={`text-2xs px-2 py-0.5 rounded-full bg-surface border border-surface-border ${tip.color} font-mono hover:bg-surface-hover transition-colors`}>
+                {tip.label}
+              </button>
+            ))}
           </div>
 
           {/* Boş state — ipuçları */}
@@ -221,7 +336,12 @@ function SearchOverlay({ spaces, onClose }: SearchOverlayProps) {
           {/* Sonuçlar */}
           {query && (
             <>
-              {results.length === 0 ? (
+              {postsLoading && results.length === 0 ? (
+                <div className="flex items-center justify-center py-6 gap-2 text-sm text-text-muted">
+                  <div className="w-4 h-4 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+                  Aranıyor...
+                </div>
+              ) : results.length === 0 ? (
                 <div className="px-4 py-8 text-center">
                   <div className="text-2xl mb-2">🔍</div>
                   <p className="text-sm text-text-secondary font-medium">"{query}" için sonuç bulunamadı</p>
@@ -270,38 +390,82 @@ function SearchOverlay({ spaces, onClose }: SearchOverlayProps) {
                         }
 
                         // Channel result
-                        const meta = CHANNEL_META[result.channelType]
-                        return (
-                          <button
-                            key={result.href}
-                            onClick={() => navigate(result.href)}
-                            onMouseEnter={() => setActive(currentIdx)}
-                            className={cn(
-                              'w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left',
-                              isActive ? 'bg-brand/10' : 'hover:bg-surface'
-                            )}
-                          >
-                            <div className={cn(
-                              'w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0',
-                              meta?.bgClass ?? 'bg-surface'
-                            )}>
-                              {meta?.icon ?? '#'}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <span className={cn('text-sm block truncate', isActive ? 'text-text-primary' : 'text-text-secondary')}>
-                                {result.label}
-                              </span>
-                              <span className="text-2xs text-text-muted">
-                                {result.spaceEmoji} {result.spaceName}
-                              </span>
-                            </div>
-                            {isActive && (
-                              <kbd className="text-2xs bg-surface px-1.5 py-0.5 rounded border border-surface-border font-mono text-text-muted shrink-0">
-                                ↵
-                              </kbd>
-                            )}
-                          </button>
-                        )
+                        if (result.kind === 'channel') {
+                          const meta = CHANNEL_META[result.channelType as keyof typeof CHANNEL_META]
+                          return (
+                            <button
+                              key={result.href}
+                              onClick={() => navigate(result.href)}
+                              onMouseEnter={() => setActive(currentIdx)}
+                              className={cn(
+                                'w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left',
+                                isActive ? 'bg-brand/10' : 'hover:bg-surface'
+                              )}
+                            >
+                              <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0', meta?.bgClass ?? 'bg-surface')}>
+                                {meta?.icon ?? '#'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className={cn('text-sm block truncate', isActive ? 'text-text-primary' : 'text-text-secondary')}>{result.label}</span>
+                                <span className="text-2xs text-text-muted">{result.spaceEmoji} {result.spaceName}</span>
+                              </div>
+                              {isActive && <kbd className="text-2xs bg-surface px-1.5 py-0.5 rounded border border-surface-border font-mono text-text-muted shrink-0">↵</kbd>}
+                            </button>
+                          )
+                        }
+
+                        // Post result
+                        if (result.kind === 'post') {
+                          return (
+                            <button
+                              key={result.href}
+                              onClick={() => navigate(result.href)}
+                              onMouseEnter={() => setActive(currentIdx)}
+                              className={cn('w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left', isActive ? 'bg-brand/10' : 'hover:bg-surface')}
+                            >
+                              <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 border', isActive ? 'bg-brand/10 border-brand/30' : 'bg-surface border-surface-border')}>
+                                {result.fileCount > 0 ? '📎' : '📄'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className={cn('text-sm block truncate', isActive ? 'text-text-primary' : 'text-text-secondary')}>{result.label}</span>
+                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                  <span className="text-2xs text-text-muted">{result.spaceEmoji} {result.spaceName}</span>
+                                  {result.fileCount > 0 && <span className="text-2xs text-accent-amber">📎 {result.fileCount} dosya</span>}
+                                  {result.tags.slice(0,2).map((t: string) => (
+                                    <span key={t} className="text-2xs text-brand bg-brand/10 rounded px-1">#{t}</span>
+                                  ))}
+                                </div>
+                              </div>
+                              {isActive && <kbd className="text-2xs bg-surface px-1.5 py-0.5 rounded border border-surface-border font-mono text-text-muted shrink-0">↵</kbd>}
+                            </button>
+                          )
+                        }
+
+                        // Tag result
+                        if (result.kind === 'tag') {
+                          return (
+                            <button
+                              key={result.href + (result as any).tag}
+                              onClick={() => navigate(result.href)}
+                              onMouseEnter={() => setActive(currentIdx)}
+                              className={cn('w-full flex items-center gap-3 px-4 py-2.5 transition-colors text-left', isActive ? 'bg-brand/10' : 'hover:bg-surface')}
+                            >
+                              <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 border', isActive ? 'bg-brand/10 border-brand/30' : 'bg-surface border-surface-border')}>
+                                🏷️
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className={cn('text-sm block truncate', isActive ? 'text-text-primary' : 'text-text-secondary')}>{result.label}</span>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-2xs text-brand bg-brand/10 rounded px-1">#{(result as any).tag}</span>
+                                  <span className="text-2xs text-text-muted">{result.spaceEmoji} {result.spaceName}</span>
+                                </div>
+                              </div>
+                              {isActive && <kbd className="text-2xs bg-surface px-1.5 py-0.5 rounded border border-surface-border font-mono text-text-muted shrink-0">↵</kbd>}
+                            </button>
+                          )
+                        }
+
+                        return null
                       })}
                     </li>
                   ))}
@@ -323,9 +487,7 @@ function SearchOverlay({ spaces, onClose }: SearchOverlayProps) {
 }
 
 // ─── Space section ────────────────────────────────────────────────────────────
-function SpaceSection({ space, isActive, onNavigate }: {
-  space: Space; isActive: boolean; onNavigate?: () => void
-}) {
+function SpaceSection({ space, isActive, onNavigate }: any) {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(isActive)
 
@@ -347,7 +509,7 @@ function SpaceSection({ space, isActive, onNavigate }: {
       {isOpen && (
         <div className="ml-2 mt-0.5 space-y-0.5">
           {space.channels.map(channel => {
-            const meta   = CHANNEL_META[channel.type]
+            const meta   = CHANNEL_META[channel.type as keyof typeof CHANNEL_META]
             const href   = `/dashboard/spaces/${space.slug}/${channel.slug}`
             const active = pathname === href
             return (

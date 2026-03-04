@@ -276,7 +276,7 @@ export default function PostDetailPage() {
       setPost(p); setSpace(s); setIsLoading(false)
       if (p) {
         setEditTitle(p.title); setEditContent(p.content)
-        incrementViewCount(params.postId).catch(() => {})
+        incrementViewCount(params.postId, firebaseUser?.uid).catch(() => {})
       }
     }
     load()
@@ -308,9 +308,17 @@ export default function PostDetailPage() {
 
   async function handlePostReaction(emoji: string) {
     if (!currentUid || !post) return
+    // Optimistic update — sunucu yanıtı beklemeden UI'ı güncelle
+    setPost(prev => {
+      if (!prev) return prev
+      const reactions: Record<string, string[]> = { ...(prev.reactions ?? {}) }
+      const users = reactions[emoji] ?? []
+      reactions[emoji] = users.includes(currentUid)
+        ? users.filter(u => u !== currentUid)
+        : [...users, currentUid]
+      return { ...prev, reactions }
+    })
     await toggleReaction('posts', post.id, emoji, currentUid)
-    const snap = await import('@/lib/firestore').then(m => m.getPost(post.id))
-    if (snap) setPost(snap)
   }
 
   async function handleCommentReaction(commentId: string, emoji: string) {

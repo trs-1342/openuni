@@ -1,4 +1,5 @@
 'use client'
+import React from 'react'
 
 import { Sidebar } from '@/components/layout/Sidebar'
 import { useNotifications } from '@/hooks/useNotifications'
@@ -9,16 +10,17 @@ import type { NotificationType } from '@/types'
 import { useState } from 'react'
 
 const TYPE_META: Record<NotificationType, { icon: any; color: string }> = {
-  announcement: { icon: Megaphone, color: 'text-accent-amber' },
-  new_post:     { icon: FileText,  color: 'text-accent-purple' },
+  announcement: { icon: Megaphone,     color: 'text-accent-amber' },
+  new_post:     { icon: FileText,      color: 'text-accent-purple' },
   new_comment:  { icon: MessageSquare, color: 'text-brand' },
-  mention:      { icon: Bell,      color: 'text-accent-green' },
-  moderation:   { icon: Settings,  color: 'text-accent-red' },
-  system:       { icon: Bell,      color: 'text-text-muted' },
+  mention:      { icon: Bell,          color: 'text-accent-green' },
+  moderation:   { icon: Settings,      color: 'text-accent-red' },
+  system:       { icon: Bell,          color: 'text-text-muted' },
+  reaction:     { icon: Bell,          color: 'text-accent-amber' },
 }
 
-function Skeleton({ className }: { className?: string }) {
-  return <div className={`bg-surface animate-pulse rounded ${className}`} />
+function Skeleton({ className }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={`bg-surface animate-pulse rounded ${className ?? ""}`} />
 }
 
 export default function NotificationsPage() {
@@ -88,7 +90,7 @@ export default function NotificationsPage() {
                   <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Yeni</h2>
                   <div className="space-y-2">
                     {unread.map(n => {
-                      const { icon: Icon, color } = TYPE_META[n.type]
+                      const { icon: Icon, color } = (TYPE_META as any)[n.type] ?? TYPE_META.system
                       return (
                         <Link key={n.id} href={n.link || '#'} onClick={() => markRead(n.id)}>
                           <div className="card hover:bg-surface-hover border-brand/20 border cursor-pointer transition-all flex items-start gap-3">
@@ -116,7 +118,7 @@ export default function NotificationsPage() {
                   <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Okunmuş</h2>
                   <div className="space-y-2 opacity-60">
                     {read.map(n => {
-                      const { icon: Icon, color } = TYPE_META[n.type]
+                      const { icon: Icon, color } = (TYPE_META as any)[n.type] ?? TYPE_META.system
                       return (
                         <Link key={n.id} href={n.link || '#'}>
                           <div className="card hover:bg-surface-hover cursor-pointer transition-all flex items-start gap-3">

@@ -35,7 +35,7 @@ function ProgressBar({ progress, status }: { progress: number; status: UploadedF
 }
 
 // ─── File Row ─────────────────────────────────────────────────────────────────
-function FileRow({ file, onRemove }: { file: UploadedFile; onRemove: () => void }) {
+function FileRow({ file, onRemove }: any) {
   return (
     <div className={cn(
       'flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all',

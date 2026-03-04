@@ -28,12 +28,13 @@ export function useComments(postId: string) {
     try {
       await createComment({
         postId,
-        parentId,
-        replyToAuthor,
+        // undefined alanları Firestore'a gönderme
+        ...(parentId     ? { parentId }     : {}),
+        ...(replyToAuthor ? { replyToAuthor } : {}),
         author: {
           uid:         firebaseUser.uid,
           displayName: profile?.displayName ?? firebaseUser.displayName ?? 'Kullanıcı',
-          avatarUrl:   profile?.avatarUrl,
+          ...(profile?.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
           role:        profile?.role ?? 'student',
         },
         content: content.trim(),

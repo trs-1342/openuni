@@ -7,12 +7,7 @@ import { ChannelBadge, RoleBadge } from '@/components/ui/Badge'
 import type { Post } from '@/types'
 import { MessageSquare, Eye, Pin, Paperclip, FileText, ChevronRight, Download, ImageIcon, File } from 'lucide-react'
 
-interface PostCardProps {
-  post: Post
-  spaceSlug: string
-  channelSlug: string
-  variant?: 'default' | 'compact'
-}
+type PostCardProps = { post: any; spaceSlug?: any; channelSlug?: any; variant?: any; [key: string]: any }
 
 export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: PostCardProps) {
   const href = `/dashboard/spaces/${spaceSlug}/${channelSlug}/${post.id}`

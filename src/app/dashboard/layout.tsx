@@ -1,3 +1,4 @@
+import React from 'react'
 // src/app/dashboard/layout.tsx
 import { AuthGuard } from '@/components/providers/AuthGuard'
 import { MobileNav } from '@/components/layout/MobileNav'

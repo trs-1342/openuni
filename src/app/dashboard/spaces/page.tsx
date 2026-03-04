@@ -1,4 +1,5 @@
 'use client'
+import React from 'react'
 
 import { useState } from 'react'
 import { Sidebar } from '@/components/layout/Sidebar'
@@ -175,12 +176,12 @@ function CreateSpaceModal({ onClose, onCreated }: { onClose: () => void; onCreat
 }
 
 // ─── Spaces Page ──────────────────────────────────────────────────────────────
-function Skeleton({ className }: { className?: string }) {
+function Skeleton({ className }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={`bg-surface animate-pulse rounded ${className}`} />
 }
 
 export default function SpacesPage() {
-  const { spaces, isLoading, refresh } = useSpaces()
+  const { spaces, isLoading } = useSpaces()
   const { user: firebaseUser }         = useAuthStore()
   const { profile }                    = useUserProfile()
   const [query,       setQuery]       = useState('')
@@ -210,7 +211,7 @@ export default function SpacesPage() {
       {showCreate && (
         <CreateSpaceModal
           onClose={() => setShowCreate(false)}
-          onCreated={() => refresh?.()}
+          onCreated={() => {}}
         />
       )}
 
@@ -297,7 +298,7 @@ export default function SpacesPage() {
                       </p>
                       <div className="space-y-1">
                         {space.channels.slice(0, 4).map(channel => {
-                          const meta = CHANNEL_META[channel.type]
+                          const meta = CHANNEL_META[channel.type as keyof typeof CHANNEL_META] ?? Object.values(CHANNEL_META)[0]
                           return (
                             <div key={channel.id} className="flex items-center gap-2 text-xs text-text-muted">
                               <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', meta.bgClass.replace('/10',''))} />

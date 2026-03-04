@@ -4,13 +4,20 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 
-export function AuthGuard({ children }: { children: React.ReactNode }) {
+export function AuthGuard({ children }: any) {
   const { user, isInitialized } = useAuthStore()
   const router = useRouter()
 
   useEffect(() => {
     if (!isInitialized) return
-    if (!user) router.replace('/auth/login')
+    if (!user) {
+      router.replace('/auth/login')
+      return
+    }
+    // E-posta doğrulanmamışsa verify-email'e gönder
+    if (!user.emailVerified) {
+      router.replace('/auth/verify-email')
+    }
   }, [user, isInitialized, router])
 
   if (!isInitialized) {
@@ -24,6 +31,6 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (!user) return null
+  if (!user || !user.emailVerified) return null
   return <>{children}</>
 }

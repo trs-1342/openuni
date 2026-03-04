@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useAuthStore } from '@/store/authStore'
 import { subscribeToAuthState, ensureUserProfile } from '@/lib/auth'
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: any) {
   const { setUser, setInitialized } = useAuthStore()
 
   useEffect(() => {

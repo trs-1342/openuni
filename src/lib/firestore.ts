@@ -16,6 +16,7 @@ import {
   Timestamp,
   type QueryConstraint,
   type Unsubscribe,
+  deleteDoc,
 } from 'firebase/firestore'
 import { db } from './firebase'
 import type { Space, Post, Notification, Channel, User } from '@/types'
@@ -209,10 +210,17 @@ export async function createPost(data: {
   return ref.id
 }
 
-export async function incrementViewCount(postId: string) {
-  await updateDoc(doc(db, 'posts', postId), {
-    viewCount: increment(1),
-  })
+export async function incrementViewCount(postId: string, uid?: string) {
+  const ref  = doc(db, 'posts', postId)
+  if (uid) {
+    const snap = await getDoc(ref)
+    if (!snap.exists()) return
+    const viewedBy: string[] = snap.data()?.viewedBy ?? []
+    if (viewedBy.includes(uid)) return
+    await updateDoc(ref, { viewCount: increment(1), viewedBy: [...viewedBy, uid] })
+  } else {
+    await updateDoc(ref, { viewCount: increment(1) })
+  }
 }
 
 // ─── NOTIFICATIONS ────────────────────────────────────────────────────────────
