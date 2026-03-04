@@ -508,7 +508,7 @@ function SpaceSection({ space, isActive, onNavigate }: any) {
 
       {isOpen && (
         <div className="ml-2 mt-0.5 space-y-0.5">
-          {space.channels.map(channel => {
+          {space.channels.map((channel: any) => {
             const meta   = CHANNEL_META[channel.type as keyof typeof CHANNEL_META]
             const href   = `/dashboard/spaces/${space.slug}/${channel.slug}`
             const active = pathname === href
