@@ -40,7 +40,7 @@ function StatCard({ label, value, icon: Icon, color, isLoading }: {
   )
 }
 
-function SpaceCard({ space }: { space: any }) {
+function SpaceCard({ space }: { space: any; [k: string]: any }) {
   return (
     <Link href={`/dashboard/spaces/${space.slug}`}>
       <div className="card hover:bg-surface-hover hover:border-surface-active transition-all cursor-pointer h-full">

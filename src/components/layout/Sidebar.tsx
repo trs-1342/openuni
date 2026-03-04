@@ -657,7 +657,11 @@ export function Sidebar({ onClose }: SidebarProps) {
           <div>
             <div className="flex items-center justify-between px-3 mb-2">
               <span className="text-2xs font-semibold text-text-muted uppercase tracking-wider">Toplulukların</span>
-              <button className="text-text-muted hover:text-text-primary transition-colors p-0.5">
+              <button
+                onClick={() => router.push('/dashboard/spaces?create=1')}
+                className="text-text-muted hover:text-text-primary transition-colors p-0.5 hover:bg-surface rounded"
+                title="Yeni topluluk oluştur"
+              >
                 <Plus className="w-3.5 h-3.5" />
               </button>
             </div>

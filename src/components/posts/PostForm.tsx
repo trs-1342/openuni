@@ -228,7 +228,7 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
         tags: values.tags,
         attachments,
         isAnnouncement: channel.type === 'announcement',
-      })
+      }, profile ?? undefined)
 
       setSubmitted(true)
       setTimeout(() => {

@@ -29,8 +29,8 @@ export function MobileNav() {
   }
 
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 glass border-t border-surface-border">
-      <div className="flex items-center justify-around px-1 pb-safe">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 glass border-t border-surface-border" style={{paddingBottom: "env(safe-area-inset-bottom, 0px)"}}>
+      <div className="flex items-center justify-around px-1 pt-1 pb-2">
         {items.map(item => {
           const Icon    = item.icon
           const active  = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))

@@ -183,7 +183,15 @@ export async function createPost(data: {
   tags: string[]
   attachments: Post['attachments']
   isAnnouncement: boolean
-}): Promise<string> {
+}, userProfile?: { isBanned?: boolean; isMuted?: boolean }): Promise<string> {
+  // Banned veya muted kullanıcı post atamaz
+  if (userProfile?.isBanned) throw new Error('Hesabınız askıya alındığı için paylaşım yapamazsınız.')
+  if (userProfile?.isMuted) throw new Error('Hesabınız susturulduğu için paylaşım yapamazsınız.')
+  // İçerik limitleri
+  if (!data.title.trim()) throw new Error('Başlık boş olamaz.')
+  if (data.title.length > 200) throw new Error('Başlık en fazla 200 karakter olabilir.')
+  if (data.content.length > 20000) throw new Error('İçerik çok uzun.')
+  if (data.tags.length > 10) throw new Error('En fazla 10 etiket eklenebilir.')
   const ref = await addDoc(collection(db, 'posts'), {
     ...data,
     authorId: data.author.uid,
@@ -319,7 +327,11 @@ export async function createComment(data: {
   replyToAuthor?: string
   author: Comment['author']
   content: string
-}): Promise<string> {
+}, userProfile?: { isBanned?: boolean; isMuted?: boolean }): Promise<string> {
+  if (userProfile?.isBanned) throw new Error('Hesabınız askıya alındığı için yorum yapamazsınız.')
+  if (userProfile?.isMuted) throw new Error('Hesabınız susturulduğu için yorum yapamazsınız.')
+  if (!data.content.trim()) throw new Error('Yorum boş olamaz.')
+  if (data.content.length > 5000) throw new Error('Yorum en fazla 5000 karakter olabilir.')
   const ref = await addDoc(collection(db, 'comments'), {
     ...data,
     authorId: data.author.uid,
@@ -418,7 +430,12 @@ export async function getUserProfile(uid: string): Promise<User | null> {
 }
 
 export async function updateUserProfile(uid: string, data: Partial<User>): Promise<void> {
-  await updateDoc(doc(db, 'users', uid), { ...data, updatedAt: serverTimestamp() })
+  // Kritik alanların kullanıcı tarafından değiştirilmesini engelle
+  const PROTECTED_FIELDS = ['role', 'isBanned', 'isMuted', 'banReason', 'muteReason', 'banUntil', 'muteUntil', 'uid', 'email']
+  const safe = Object.fromEntries(
+    Object.entries(data).filter(([key]) => !PROTECTED_FIELDS.includes(key))
+  )
+  await updateDoc(doc(db, 'users', uid), { ...safe, updatedAt: serverTimestamp() })
 }
 
 // ─── Admin: Ban / Mute / Moderatör ───────────────────────────────────────────

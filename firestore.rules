@@ -2,54 +2,73 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ─── Helpers ────────────────────────────────────────────────────────────
+    // ─── Helpers ──────────────────────────────────────────────────────────────
     function isSignedIn() {
       return request.auth != null;
     }
-
-    function isVerifiedStudent() {
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+    function isStudentEmail() {
       return isSignedIn() &&
         request.auth.token.email.matches('.*@ogr\\.gelisim\\.edu\\.tr');
     }
-
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
     function isModerator() {
-      return isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['moderator', 'admin'];
+      return isSignedIn() && getUserRole() in ['moderator', 'admin'];
+    }
+    function isAdmin() {
+      return isSignedIn() && getUserRole() == 'admin';
     }
 
-    // ─── Users ──────────────────────────────────────────────────────────────
+    // ─── Users ────────────────────────────────────────────────────────────────
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isSignedIn() && request.auth.uid == userId;
+      // Kullanıcı kendi profilini oluşturabilir/güncelleyebilir
+      allow create, update: if isSignedIn() && request.auth.uid == userId;
+      // Admin/mod başkasının profilini güncelleyebilir (ban/mute/rol)
+      allow update: if isModerator();
     }
 
-    // ─── Spaces ─────────────────────────────────────────────────────────────
+    // ─── Spaces ───────────────────────────────────────────────────────────────
     match /spaces/{spaceId} {
-      allow read: if isVerifiedStudent();
-      allow write: if isModerator();
+      allow read: if isSignedIn() && isStudentEmail();
+      // Moderatör/admin oluşturabilir ve güncelleyebilir
+      allow create: if isModerator();
+      allow update: if isModerator();
+      allow delete: if isAdmin();
     }
 
-    // ─── Posts ──────────────────────────────────────────────────────────────
+    // ─── Posts ────────────────────────────────────────────────────────────────
     match /posts/{postId} {
-      allow read: if isVerifiedStudent();
-      allow create: if isVerifiedStudent() &&
+      allow read: if isSignedIn() && isStudentEmail();
+      allow create: if isVerified() && isStudentEmail() &&
         request.resource.data.authorId == request.auth.uid;
-      allow update: if isSignedIn() && (
-        resource.data.authorId == request.auth.uid ||
-        isModerator()
+      allow update: if isVerified() && (
+        resource.data.authorId == request.auth.uid || isModerator()
       );
       allow delete: if isModerator();
     }
 
-    // ─── Notifications ───────────────────────────────────────────────────────
-    match /notifications/{notifId} {
-      allow read: if isSignedIn() &&
-        resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() &&
-        resource.data.userId == request.auth.uid;
-      allow create: if isModerator();
+    // ─── Comments ─────────────────────────────────────────────────────────────
+    match /comments/{commentId} {
+      allow read: if isSignedIn() && isStudentEmail();
+      allow create: if isVerified() && isStudentEmail() &&
+        request.resource.data.authorId == request.auth.uid;
+      allow update: if isVerified() && (
+        resource.data.authorId == request.auth.uid || isModerator()
+      );
+      allow delete: if isModerator();
     }
 
+    // ─── Notifications ────────────────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read, update: if isSignedIn() &&
+        resource.data.userId == request.auth.uid;
+      // Sistem veya moderatör bildirim oluşturabilir
+      allow create: if isSignedIn();
+    }
   }
 }

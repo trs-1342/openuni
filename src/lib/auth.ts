@@ -44,6 +44,8 @@ export interface RegisterData {
 }
 
 export async function registerUser(data: RegisterData): Promise<User> {
+  // Email'i normalize et (büyük harf bypass engeli)
+  data.email = data.email.trim().toLowerCase()
   if (!isValidStudentEmail(data.email)) {
     throw new Error('Yalnızca @ogr.gelisim.edu.tr uzantılı e-posta kabul edilir.')
   }
@@ -88,6 +90,7 @@ export async function registerUser(data: RegisterData): Promise<User> {
 }
 
 export async function loginUser(email: string, password: string): Promise<User> {
+  email = email.trim().toLowerCase()
   if (!isValidStudentEmail(email)) {
     throw new Error('Yalnızca @ogr.gelisim.edu.tr uzantılı e-posta ile giriş yapılabilir.')
   }

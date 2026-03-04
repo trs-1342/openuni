@@ -1,7 +1,7 @@
 'use client'
-import React from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 
-import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { useSpaces } from '@/hooks/useSpaces'
 import { useAuthStore } from '@/store/authStore'
@@ -187,6 +187,14 @@ export default function SpacesPage() {
   const [query,       setQuery]       = useState('')
   const [drawerOpen,  setDrawerOpen]  = useState(false)
   const [showCreate,  setShowCreate]  = useState(false)
+  const searchParams = useSearchParams()
+
+  // Sidebar'dan ?create=1 ile gelince modal'ı aç
+  useEffect(() => {
+    if (searchParams.get('create') === '1') {
+      setShowCreate(true)
+    }
+  }, [searchParams])
 
   const isAdmin = firebaseUser?.email === ADMIN_EMAIL || profile?.role === 'admin'
   const isMod   = profile?.role === 'moderator'
