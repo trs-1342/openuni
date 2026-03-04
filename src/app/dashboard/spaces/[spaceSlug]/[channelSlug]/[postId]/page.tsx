@@ -24,7 +24,7 @@ import {
   ChevronRight, Eye, MessageSquare, Paperclip, FileText,
   Download, Send, Loader2, ArrowLeft, Pin, Menu, MoreHorizontal,
   Edit2, Trash2, Archive, SmilePlus, Reply, X, Check,
-  AlertTriangle, Bookmark, BookmarkCheck,
+  AlertTriangle, Bookmark, BookmarkCheck, ZoomIn,
 } from 'lucide-react'
 
 // Sabit emoji listesi
