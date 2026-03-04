@@ -2,6 +2,8 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { Lightbox } from '@/components/ui/Lightbox'
+import type { LightboxImage } from '@/components/ui/Lightbox'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Sidebar } from '@/components/layout/Sidebar'
@@ -134,13 +136,11 @@ function ReactionBar({
 }
 
 // ─── Yorum bileşeni ───────────────────────────────────────────────────────────
+// eslint-disable-next-line
 function CommentItem({
   comment, currentUserId, currentUserRole, postAuthorId,
   onReply, onReaction,
-}: {
-  comment: Comment; currentUserId: string; currentUserRole: string; postAuthorId: string
-  onReply: (c: Comment) => void; onReaction: (cId: string, e: string) => void
-}) {
+}: any) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(comment.content)
   const [isSaving, setIsSaving] = useState(false)
@@ -242,6 +242,7 @@ export default function PostDetailPage() {
   const { profile }            = useUserProfile()
 
   const [post,       setPost]       = useState<Post | null>(null)
+  const [lightbox,   setLightbox]   = useState<{ images: LightboxImage[]; index: number } | null>(null)
   const [space,      setSpace]      = useState<Space | null>(null)
   const [isLoading,  setIsLoading]  = useState(true)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -390,6 +391,14 @@ export default function PostDetailPage() {
   const inputDisabled = isMuted || isBanned || isSubmitting
 
   return (
+    <>
+    {lightbox && (
+      <Lightbox
+        images={lightbox.images}
+        startIndex={lightbox.index}
+        onClose={() => setLightbox(null)}
+      />
+    )}
     <div className="flex h-screen overflow-hidden bg-background">
       <div className="hidden lg:block"><Sidebar /></div>
       {drawerOpen && (
@@ -525,21 +534,28 @@ export default function PostDetailPage() {
                       <Paperclip className="w-3 h-3" />Ekler ({post.attachments.length})
                     </p>
                     {/* Resim önizlemeleri */}
-                    {post.attachments.filter(a => a.type === 'image').length > 0 && (
-                      <div className="grid grid-cols-2 gap-2">
-                        {post.attachments.filter(a => a.type === 'image').map(att => (
-                          <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer"
-                            className="block rounded-lg overflow-hidden border border-surface-border hover:border-brand/40 transition-all group">
-                            <img src={att.url} alt={att.name}
-                              className="w-full h-32 object-cover group-hover:scale-105 transition-transform duration-200" />
-                            <div className="px-2 py-1.5 flex items-center gap-1.5">
-                              <span className="text-2xs text-text-muted truncate flex-1">{att.name}</span>
-                              <Download className="w-3 h-3 text-text-muted group-hover:text-brand shrink-0" />
-                            </div>
-                          </a>
-                        ))}
-                      </div>
-                    )}
+                    {post.attachments.filter(a => a.type === 'image').length > 0 && (() => {
+                      const imgs = post.attachments.filter(a => a.type === 'image')
+                      return (
+                        <div className="grid grid-cols-2 gap-2">
+                          {imgs.map((att, idx) => (
+                            <button
+                              key={att.id}
+                              type="button"
+                              onClick={() => setLightbox({ images: imgs.map(i => ({ url: i.url, name: i.name })), index: idx })}
+                              className="block rounded-lg overflow-hidden border border-surface-border hover:border-brand/40 transition-all group text-left w-full"
+                            >
+                              <img src={att.url} alt={att.name}
+                                className="w-full h-36 object-cover group-hover:scale-105 transition-transform duration-200" />
+                              <div className="px-2 py-1.5 flex items-center gap-1.5 bg-surface/50">
+                                <span className="text-2xs text-text-muted truncate flex-1">{att.name}</span>
+                                <ZoomIn className="w-3 h-3 text-text-muted group-hover:text-brand shrink-0 transition-colors" />
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )
+                    })()}
                     {/* PDF ve diğer dosyalar */}
                     {post.attachments.filter(a => a.type !== 'image').map(att => (
                       <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" download
@@ -585,7 +601,7 @@ export default function PostDetailPage() {
               <div className="space-y-4">
                 {comments.map(c => (
                   <CommentItem key={c.id}
-                    comment={c}
+                    comment={c as any}
                     currentUserId={currentUid}
                     currentUserRole={currentRole}
                     postAuthorId={post.authorId}
@@ -657,5 +673,6 @@ export default function PostDetailPage() {
         </div>
       </main>
     </div>
+    </>
   )
 }

@@ -9,6 +9,7 @@ import {
   reauthenticateWithCredential,
   reload,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   type User,
 } from 'firebase/auth'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
@@ -178,6 +179,19 @@ export async function ensureUserProfile(user: User) {
   } catch (err) {
     console.warn('[ensureUserProfile] hata:', err)
   }
+}
+
+// ─── Parola Sıfırlama ─────────────────────────────────────────────────────
+export async function resetPassword(email: string): Promise<void> {
+  const normalized = email.trim().toLowerCase()
+  if (!isValidStudentEmail(normalized)) {
+    throw new Error('Yalnızca @ogr.gelisim.edu.tr uzantılı e-posta kabul edilir.')
+  }
+  const actionCodeSettings = {
+    url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://openigu.vercel.app'}/auth/login`,
+    handleCodeInApp: false,
+  }
+  await sendPasswordResetEmail(auth, normalized, actionCodeSettings)
 }
 
 // ─── Şifre Değiştirme ─────────────────────────────────────────────────────

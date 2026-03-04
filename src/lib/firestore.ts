@@ -17,6 +17,7 @@ import {
   type QueryConstraint,
   type Unsubscribe,
   deleteDoc,
+  setDoc,
 } from 'firebase/firestore'
 import { db } from './firebase'
 import type { Space, Post, Notification, Channel, User } from '@/types'
