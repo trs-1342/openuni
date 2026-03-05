@@ -15,7 +15,7 @@ import { auth } from '@/lib/firebase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  User, GraduationCap, Mail, Shield, LogOut,
+  User, GraduationCap, Mail, Shield, LogOut, Hash,
   Save, CheckCircle, AlertCircle, Menu, Clock,
   Lock, Eye, EyeOff, Download, RefreshCw, ShieldCheck,
   ChevronRight, Info, BookOpen, FileText, ExternalLink,
@@ -307,6 +307,7 @@ export default function SettingsPage() {
   const [fakulte,      setFakulte]      = useState('')
   const [department,   setDepartment]   = useState('')
   const [grade,        setGrade]        = useState('')
+  const [isDirty,      setIsDirty]      = useState(false)
   const [isSaving,     setIsSaving]     = useState(false)
   const [saved,        setSaved]        = useState(false)
   const [profileError, setProfileError] = useState('')
@@ -314,10 +315,18 @@ export default function SettingsPage() {
   const { theme, setTheme } = useThemeStore()
   // Username
   const [username,        setUsernameInput]   = useState('')
+  const [originalUsername, setOriginalUsername] = useState('')
   const [usernameError,   setUsernameError]   = useState('')
   const [usernameChecking,setUsernameChecking]= useState(false)
   const [usernameSaved,   setUsernameSaved]   = useState(false)
   const [isListed,        setIsListed]        = useState(true)
+
+  // Sayfa açılışında token refresh — emailVerified güncel gelsin
+  useEffect(() => {
+    if (firebaseUser) {
+      firebaseUser.reload().catch(() => {})
+    }
+  }, []) // eslint-disable-line
 
   useEffect(() => {
     if (profile) {
@@ -326,8 +335,11 @@ export default function SettingsPage() {
       setFakulte((profile as any).fakulte ?? '')
       setDepartment(profile.department ?? '')
       setGrade(profile.grade?.toString() ?? '')
-      setUsernameInput((profile as any).username ?? '')
+      const uname = (profile as any).username ?? ''
+      setUsernameInput(uname)
+      setOriginalUsername(uname)
       setIsListed((profile as any).isListedInDirectory !== false)
+      setIsDirty(false)
     }
   }, [profile])
 
@@ -341,13 +353,22 @@ export default function SettingsPage() {
     setUsernameChecking(true); setUsernameError('')
     try {
       await saveUsernameToFirestore(firebaseUser.uid, username)
-      setUsernameInput(username.toLowerCase())
+      const saved = username.toLowerCase()
+      setUsernameInput(saved)
+      setOriginalUsername(saved)
       setUsernameSaved(true)
       setTimeout(() => setUsernameSaved(false), 3000)
     } catch (e: any) {
       setUsernameError(e?.message ?? 'Hata oluştu.')
     } finally { setUsernameChecking(false) }
   }
+
+  // emailVerified true olduysa Firestore'daki isVerified'ı da güncelle
+  useEffect(() => {
+    if (firebaseUser?.emailVerified && profile && !(profile as any).isVerified) {
+      updateUserProfile(firebaseUser.uid, { isVerified: true } as any).catch(() => {})
+    }
+  }, [firebaseUser, profile])
 
   async function handleToggleListed() {
     if (!firebaseUser) return
@@ -448,7 +469,7 @@ export default function SettingsPage() {
               <p className="font-semibold text-text-primary">{currentName}</p>
               <p className="text-xs text-text-muted mt-0.5">{firebaseUser?.email}</p>
               <div className="flex items-center gap-3 mt-1.5">
-                {firebaseUser?.emailVerified
+                {(firebaseUser?.emailVerified || (profile as any)?.isVerified)
                   ? <span className="flex items-center gap-1 text-2xs text-accent-green"><ShieldCheck className="w-3 h-3" />Doğrulandı</span>
                   : <span className="flex items-center gap-1 text-2xs text-accent-amber"><AlertCircle className="w-3 h-3" />E-posta doğrulanmadı</span>
                 }
@@ -487,7 +508,7 @@ export default function SettingsPage() {
                     <label className="block text-xs font-medium text-text-secondary mb-1.5">Ad Soyad</label>
                     <div className="relative">
                       <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                      <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setProfileError('') }}
+                      <input type="text" value={displayName} onChange={e => { setDisplayName(e.target.value); setProfileError(''); setIsDirty(true) }}
                         placeholder="Ad Soyad" className="input pl-10" />
                     </div>
                   </div>
@@ -514,7 +535,7 @@ export default function SettingsPage() {
                       <button
                         type="button"
                         onClick={handleSaveUsername}
-                        disabled={usernameChecking || !username}
+                        disabled={usernameChecking || !username || username === originalUsername}
                         className="px-4 py-2 rounded-lg bg-brand text-white text-xs font-semibold hover:bg-brand/90 transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0"
                       >
                         {usernameChecking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : usernameSaved ? <CheckCircle className="w-3.5 h-3.5" /> : null}
@@ -528,27 +549,47 @@ export default function SettingsPage() {
                     )}
                     <p className="text-2xs text-text-muted">Harf, rakam, nokta (.), alt çizgi (_) ve tire (-) kullanılabilir. . _ - ile başlayıp bitemez.</p>
                     {/* Dizinde listeleme */}
-                    <div className="flex items-center justify-between gap-4 pt-3 border-t border-surface-border">
-                      <div className="min-w-0">
+                    <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, paddingTop:12, borderTop:'1px solid var(--color-surface-border, #2a3347)'}}>
+                      <div style={{flex:1, minWidth:0}}>
                         <p className="text-xs font-medium text-text-secondary">Kullanıcılar listesinde görün</p>
-                        <p className="text-2xs text-text-muted mt-0.5">Diğer kullanıcılar seni kullanıcı listesinde görebilir</p>
+                        <p className="text-2xs text-text-muted" style={{marginTop:2}}>Diğer kullanıcılar seni üyeler sayfasında görebilir</p>
                       </div>
                       <button
                         type="button"
                         onClick={handleToggleListed}
-                        className={cn(
-                          'relative rounded-full transition-colors shrink-0',
-                          isListed ? 'bg-brand' : 'bg-surface-active'
-                        )}
-                        style={{ minWidth: 44, width: 44, height: 24 }}
+                        role="switch"
+                        aria-checked={isListed}
+                        style={{
+                          position:'relative',
+                          display:'inline-block',
+                          width:44,
+                          height:24,
+                          minWidth:44,
+                          flexShrink:0,
+                          borderRadius:12,
+                          border:'none',
+                          padding:0,
+                          cursor:'pointer',
+                          backgroundColor: isListed ? '#4F7EF7' : '#4B5563',
+                          transition:'background-color 0.2s',
+                          overflow:'hidden',
+                        }}
                       >
-                        <span className={cn(
-                          'absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform',
-                          isListed ? 'translate-x-6' : 'translate-x-1'
-                        )} />
+                        <span style={{
+                          position:'absolute',
+                          top:3,
+                          left: isListed ? 23 : 3,
+                          width:18,
+                          height:18,
+                          borderRadius:'50%',
+                          backgroundColor:'white',
+                          boxShadow:'0 1px 3px rgba(0,0,0,0.3)',
+                          transition:'left 0.2s',
+                        }} />
                       </button>
                     </div>
                   </div>
+
 
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1.5">
@@ -557,7 +598,21 @@ export default function SettingsPage() {
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                       <input type="email" value={firebaseUser?.email ?? ''} disabled
-                        className="input pl-10 opacity-50 cursor-not-allowed" />
+                        className="input pl-10 opacity-50 cursor-not-allowed bg-surface/50" />
+                    </div>
+                  </div>
+
+                  {/* Öğrenci No */}
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                      Öğrenci No <span className="text-text-muted font-normal">(değiştirilemez)</span>
+                    </label>
+                    <div className="relative">
+                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                      <input type="text"
+                        value={(profile as any)?.studentId ?? '—'}
+                        disabled
+                        className="input pl-10 opacity-50 cursor-not-allowed bg-surface/50" />
                     </div>
                   </div>
                   {/* Statü seçimi */}
@@ -566,7 +621,7 @@ export default function SettingsPage() {
                     <div className="grid grid-cols-2 gap-1.5">
                       {(['lisans','onlisans','ogretmen','diger'] as UserType[]).map(t => (
                         <button key={t} type="button"
-                          onClick={() => { setUserType(t); setFakulte(''); setDepartment(''); setGrade('') }}
+                          onClick={() => { setUserType(t); setFakulte(''); setDepartment(''); setGrade(''); setIsDirty(true) }}
                           className={cn('py-2 px-3 rounded-lg text-xs border transition-all text-left',
                             userType === t ? 'bg-brand/10 border-brand text-brand' : 'border-surface-border text-text-muted hover:border-surface-active')}>
                           {USER_TYPE_LABELS[t]}
@@ -582,7 +637,7 @@ export default function SettingsPage() {
                         {userType === 'lisans' ? 'Fakülte' : 'Meslek Yüksekokulu'}
                       </label>
                       <select value={fakulte}
-                        onChange={e => { setFakulte(e.target.value); setDepartment('') }}
+                        onChange={e => { setFakulte(e.target.value); setDepartment(''); setIsDirty(true) }}
                         className="input appearance-none bg-surface">
                         <option value="">Seçin</option>
                         {getFakulteList(userType).map(f => <option key={f} value={f}>{f}</option>)}
@@ -596,7 +651,7 @@ export default function SettingsPage() {
                       <label className="block text-xs font-medium text-text-secondary mb-1.5">Bölüm / Program</label>
                       <div className="relative">
                         <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                        <select value={department} onChange={e => setDepartment(e.target.value)}
+                        <select value={department} onChange={e => { setDepartment(e.target.value); setIsDirty(true) }}
                           className="input pl-10 appearance-none bg-surface">
                           <option value="">Bölüm seçin</option>
                           {getBolumList(userType, fakulte).map(b => <option key={b} value={b}>{b}</option>)}
@@ -612,7 +667,7 @@ export default function SettingsPage() {
                       <div className="grid grid-cols-5 gap-1.5">
                         {getGradeOptions(userType, true).map(g => (
                           <button key={g.value} type="button"
-                            onClick={() => setGrade(g.value)}
+                            onClick={() => { setGrade(g.value); setIsDirty(true) }}
                             className={cn('py-2 rounded-lg text-xs border transition-all',
                               grade === g.value ? 'bg-brand/10 border-brand text-brand' : 'border-surface-border text-text-muted hover:border-surface-active')}>
                             {g.label.replace('. Sınıf','').replace(' Sınıfı','')}
@@ -631,7 +686,7 @@ export default function SettingsPage() {
                       <CheckCircle className="w-3.5 h-3.5 shrink-0" />Profil başarıyla güncellendi!
                     </div>
                   )}
-                  <button type="submit" disabled={isSaving}
+                  <button type="submit" disabled={isSaving || !isDirty}
                     className={cn('btn-primary text-sm px-5 py-2 flex items-center gap-2', isSaving && 'opacity-70 cursor-not-allowed')}>
                     {isSaving
                       ? <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

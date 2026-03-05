@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn, CHANNEL_META } from '@/lib/utils'
 import { DropZone } from '@/components/ui/DropZone'
@@ -10,6 +10,8 @@ import { useAuthStore } from '@/store/authStore'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { createPost } from '@/lib/firestore'
 import type { Channel, ChannelType, Attachment } from '@/types'
+import { getListedUsers } from '@/lib/firestore'
+import type { User } from '@/types'
 import {
   AlertCircle, ArrowLeft, CheckCircle, ChevronDown,
   Eye, Loader2, Lock, Send, Info,
@@ -161,11 +163,26 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
   const { user: firebaseUser } = useAuthStore()
   const { profile } = useUserProfile()
 
+  const isBanned = (profile as any)?.isBanned && (!(profile as any)?.banUntil || new Date((profile as any).banUntil) > new Date())
+  const isMuted  = (profile as any)?.isMuted  && (!(profile as any)?.muteUntil  || new Date((profile as any).muteUntil)  > new Date())
+
   const [values, setValues]       = useState<FormValues>({ title: '', content: '', tags: [] })
   const [errors, setErrors]       = useState<FieldError>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showPreview, setShowPreview]   = useState(false)
   const [submitted, setSubmitted]       = useState(false)
+
+  // Mention sistemi
+  const [allUsers, setAllUsers]           = useState<User[]>([])
+  const [mentionQuery, setMentionQuery]   = useState('')
+  const [mentionOpen, setMentionOpen]     = useState(false)
+  const [mentionPos, setMentionPos]       = useState(0) // @ karakterinin textarea'daki pozisyonu
+  const [mentionSuggestions, setMentionSuggestions] = useState<User[]>([])
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    getListedUsers(200).then(users => setAllUsers(users)).catch(() => {})
+  }, [])
 
   function set<K extends keyof FormValues>(key: K, val: FormValues[K]) {
     setValues(prev => ({ ...prev, [key]: val }))
@@ -192,6 +209,8 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
     e.preventDefault()
     if (!validate()) return
     if (!firebaseUser) return
+    if (isBanned) { setErrors({ title: 'Hesabınız askıya alındı. Paylaşım yapamazsınız.' }); return }
+    if (isMuted)  { setErrors({ title: 'Hesabınız geçici olarak susturuldu.' }); return }
 
     setIsSubmitting(true)
     try {
@@ -307,16 +326,70 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
             {config.contentLabel}
             {config.contentRequired && <span className="text-accent-red ml-0.5">*</span>}
           </label>
-          <textarea
-            value={values.content}
-            onChange={e => set('content', e.target.value)}
-            placeholder={config.contentPlaceholder}
-            rows={6}
-            className={cn(
-              'input resize-none leading-relaxed',
-              errors.content && 'border-accent-red/60 focus:border-accent-red focus:ring-accent-red/20',
+          <div className="relative">
+            <textarea
+              ref={textareaRef}
+              value={values.content}
+              onChange={e => {
+                const val = e.target.value
+                set('content', val)
+                // Mention algılama: son @ karakterinden itibaren
+                const cursor = e.target.selectionStart
+                const textBefore = val.slice(0, cursor)
+                const match = textBefore.match(/@(\w*)$/)
+                if (match) {
+                  const q = match[1].toLowerCase()
+                  setMentionQuery(q)
+                  setMentionPos(cursor - match[0].length)
+                  const filtered = allUsers
+                    .filter(u => (u as any).username?.toLowerCase().startsWith(q) || u.displayName?.toLowerCase().includes(q))
+                    .slice(0, 6)
+                  setMentionSuggestions(filtered)
+                  setMentionOpen(filtered.length > 0)
+                } else {
+                  setMentionOpen(false)
+                }
+              }}
+              onKeyDown={e => {
+                if (mentionOpen && (e.key === 'Escape')) setMentionOpen(false)
+              }}
+              placeholder={config.contentPlaceholder}
+              rows={6}
+              className={cn(
+                'input resize-none leading-relaxed',
+                errors.content && 'border-accent-red/60 focus:border-accent-red focus:ring-accent-red/20',
+              )}
+            />
+            {/* Mention önerileri */}
+            {mentionOpen && mentionSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-surface border border-surface-border rounded-xl shadow-xl overflow-hidden">
+                {mentionSuggestions.map(u => (
+                  <button
+                    key={u.uid}
+                    type="button"
+                    onMouseDown={e => {
+                      e.preventDefault()
+                      const username = (u as any).username ?? u.uid
+                      const before = values.content.slice(0, mentionPos)
+                      const after = values.content.slice(textareaRef.current?.selectionStart ?? mentionPos + mentionQuery.length + 1)
+                      const newContent = before + '@' + username + ' ' + after
+                      set('content', newContent)
+                      setMentionOpen(false)
+                    }}
+                    className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-surface-hover transition-colors text-left"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-brand/20 flex items-center justify-center text-xs font-bold text-brand shrink-0">
+                      {u.displayName?.[0]?.toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-text-primary">{u.displayName}</p>
+                      <p className="text-2xs text-text-muted">@{(u as any).username}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
             )}
-          />
+          </div>
           {errors.content && (
             <p className="mt-1 text-2xs text-accent-red flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />{errors.content}

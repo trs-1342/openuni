@@ -21,8 +21,22 @@ export const useThemeStore = create<ThemeStore>()(
   persist(
     (set) => ({
       theme: 'dark',
-      setTheme: (theme) => set({ theme }),
+      setTheme: (theme) => {
+        // Anında DOM'a uygula - useEffect beklemeden
+        if (typeof document !== 'undefined') {
+          document.documentElement.setAttribute('data-theme', theme)
+        }
+        set({ theme })
+      },
     }),
-    { name: 'openuni-theme' }
+    {
+      name: 'openuni-theme',
+      onRehydrateStorage: () => (state) => {
+        // localStorage'dan yüklenince de anında uygula
+        if (state && typeof document !== 'undefined') {
+          document.documentElement.setAttribute('data-theme', state.theme)
+        }
+      },
+    }
   )
 )

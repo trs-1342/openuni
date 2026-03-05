@@ -530,9 +530,7 @@ function SpaceSection({ space, isActive, onNavigate }: any) {
                   'bg-text-muted':    channel.type === 'suggestion',
                 })} />
                 <span className="flex-1 truncate">{meta.icon} {channel.name}</span>
-                {channel.postCount > 0 && (
-                  <span className="text-2xs text-text-muted tabular-nums">{channel.postCount}</span>
-                )}
+{/* postCount Firestore'dan realtime gelince tekrar eklenecek */}
               </Link>
             )
           })}

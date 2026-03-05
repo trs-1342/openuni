@@ -62,9 +62,11 @@ export default function RegisterPage() {
   const passwordsMatch = form.password === form.passwordConfirm && form.passwordConfirm !== ''
   const isTeacher = form.userType === 'ogretmen' || form.userType === 'diger'
   const step1Ok = emailValid && form.displayName.trim() && form.userType &&
-    (isTeacher || (form.fakulte && form.department))
+    (isTeacher || (form.fakulte && form.department)) &&
+    (isTeacher || form.studentId.trim().length >= 6)
   const usernameErr = form.username ? validateUsername(form.username) : null
-  const canSubmit = step1Ok && form.username.trim().length >= 3 && !usernameErr && form.password.length >= 8 && passwordsMatch
+  const studentIdOk = isTeacher || form.studentId.trim().length >= 6
+  const canSubmit = step1Ok && studentIdOk && form.username.trim().length >= 3 && !usernameErr && form.password.length >= 8 && passwordsMatch
 
   const fakulteList = form.userType ? getFakulteList(form.userType as UserType) : []
   const bolumList = form.fakulte ? getBolumList(form.userType as UserType, form.fakulte) : []
@@ -153,12 +155,16 @@ export default function RegisterPage() {
                 {form.username && !usernameErr && form.username.length >= 3 && <p className="text-2xs text-accent-green mt-1">✓ Geçerli kullanıcı adı</p>}
               </div>
               <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1.5">Öğrenci No <span className="text-text-muted font-normal">(isteğe bağlı)</span></label>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">Öğrenci No <span className="text-accent-red ml-0.5">*</span></label>
                 <div className="relative">
                   <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                  <input type="text" value={form.studentId} onChange={e => update('studentId', e.target.value)}
-                    placeholder="Ör: 2021123456" className="input pl-10" />
+                  <input type="text" value={form.studentId} onChange={e => update('studentId', e.target.value.replace(/\D/g, ''))}
+                    placeholder="Ör: 2021123456" maxLength={12}
+                    className={cn('input pl-10', form.studentId && form.studentId.length < 6 && 'border-accent-red/50')} />
                 </div>
+                {!isTeacher && form.studentId && form.studentId.length < 6 && (
+                  <p className="mt-1 text-2xs text-accent-red">En az 6 haneli öğrenci numarası girin</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-2">Statü *</label>

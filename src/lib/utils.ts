@@ -138,9 +138,9 @@ export function getInitials(name: string): string {
 
 // ─── Validate Student Email ───────────────────────────────────────────────────
 export function isValidStudentEmail(email: string): boolean {
-  // lowercase kontrolü - büyük harfli domain bypass'ını engeller
+  // @ogr.gelisim.edu.tr (öğrenci) veya @gelisim.edu.tr (öğretmen/personel)
   const normalized = email.trim().toLowerCase()
-  return /^[a-z0-9._%+\-]+@ogr\.gelisim\.edu\.tr$/.test(normalized)
+  return /^[a-z0-9._%+\-]+@(ogr\.)?gelisim\.edu\.tr$/.test(normalized)
 }
 
 

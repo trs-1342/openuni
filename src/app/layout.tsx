@@ -38,7 +38,7 @@ export default function RootLayout({
   children: ReactNode
 }) {
   return (
-    <html lang="tr" data-theme="dark" className={`${inter.variable} ${syne.variable} ${jetbrainsMono.variable}`}>
+    <html lang="tr" data-theme="dark" suppressHydrationWarning className={`${inter.variable} ${syne.variable} ${jetbrainsMono.variable}`}>
       <body className="bg-background text-text-primary font-sans antialiased">
       <script dangerouslySetInnerHTML={{ __html: `
         (function() {

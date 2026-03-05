@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { cn, timeAgo, formatFileSize, CHANNEL_META } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { ChannelBadge, RoleBadge } from '@/components/ui/Badge'
@@ -10,11 +11,12 @@ import { MessageSquare, Eye, Pin, Paperclip, FileText, ChevronRight, Download, I
 type PostCardProps = { post: any; spaceSlug?: any; channelSlug?: any; variant?: any; [key: string]: any }
 
 export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: PostCardProps) {
+  const router = useRouter()
   const href = `/dashboard/spaces/${spaceSlug}/${channelSlug}/${post.id}`
   const channelMeta = CHANNEL_META[post.isAnnouncement ? 'announcement' : 'academic']
 
   return (
-    <Link href={href} className="block group">
+    <div className="block group cursor-pointer" onClick={() => router.push(href)}>
       <article className={cn(
         'card hover:bg-surface-hover border hover:border-surface-active transition-all duration-200',
         post.isPinned && 'border-l-2 border-l-accent-amber',
@@ -50,7 +52,12 @@ export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: 
             {/* Content Preview */}
             {variant === 'default' && (
               <p className="mt-1 text-xs text-text-secondary leading-relaxed line-clamp-2">
-                {post.content.replace(/\*\*/g, '')}
+                {post.content.replace(/\*\*/g, '').split(/(@\w+)/g).map((part: string, i: number) =>
+                  /^@\w+$/.test(part)
+                    ? <Link key={i} href={`/dashboard/profile/${part.slice(1)}`} onClick={e => e.stopPropagation()}
+                        className="text-accent-amber font-semibold hover:underline">{part}</Link>
+                    : part
+                )}
               </p>
             )}
 
@@ -115,6 +122,6 @@ export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: 
           )}
         </div>
       </article>
-    </Link>
+    </div>
   )
 }

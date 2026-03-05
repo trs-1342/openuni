@@ -373,11 +373,34 @@ export async function updatePost(postId: string, data: {
 }
 
 export async function deletePost(postId: string): Promise<void> {
+  const postSnap = await getDoc(doc(db, 'posts', postId))
   await updateDoc(doc(db, 'posts', postId), { status: 'rejected', updatedAt: serverTimestamp() })
+  if (postSnap.exists()) {
+    const { spaceId, channelId } = postSnap.data()
+    _decrementChannelPostCount(spaceId, channelId)
+  }
 }
 
 export async function archivePost(postId: string): Promise<void> {
+  const postSnap = await getDoc(doc(db, 'posts', postId))
   await updateDoc(doc(db, 'posts', postId), { status: 'archived', updatedAt: serverTimestamp() })
+  if (postSnap.exists()) {
+    const { spaceId, channelId } = postSnap.data()
+    _decrementChannelPostCount(spaceId, channelId)
+  }
+}
+
+async function _decrementChannelPostCount(spaceId: string, channelId: string): Promise<void> {
+  try {
+    const spaceRef = doc(db, 'spaces', spaceId)
+    const spaceSnap = await getDoc(spaceRef)
+    if (!spaceSnap.exists()) return
+    const channels: Channel[] = spaceSnap.data().channels ?? []
+    const updated = channels.map((ch: any) =>
+      ch.id === channelId ? { ...ch, postCount: Math.max(0, (ch.postCount ?? 1) - 1) } : ch
+    )
+    await updateDoc(spaceRef, { channels: updated })
+  } catch {}
 }
 
 export async function pinPost(postId: string, isPinned: boolean): Promise<void> {
@@ -478,6 +501,19 @@ export async function setUsername(uid: string, username: string, currentUsername
     usernameChangesLeft: isFirstTime ? 2 : changesLeft - 1,
     updatedAt: serverTimestamp(),
   })
+
+  // Tüm postlardaki author.username güncelle (batch)
+  try {
+    const { writeBatch, getDocs: _getDocs, query: _query, collection: _col, where: _where } = await import('firebase/firestore')
+    const postsSnap = await _getDocs(_query(_col(db, 'posts'), _where('authorId', '==', uid)))
+    if (!postsSnap.empty) {
+      const batch = writeBatch(db)
+      postsSnap.docs.forEach(d => {
+        batch.update(d.ref, { 'author.username': normalized })
+      })
+      await batch.commit()
+    }
+  } catch (e) { console.warn('[setUsername] post güncelleme hatası', e) }
 }
 
 export async function getArchivedPosts(uid: string): Promise<Post[]> {
@@ -503,7 +539,6 @@ export async function getListedUsers(limitCount = 100): Promise<User[]> {
     query(
       collection(db, 'users'),
       where('isListedInDirectory', '==', true),
-      orderBy('displayName', 'asc'),
       limit(limitCount)
     )
   )

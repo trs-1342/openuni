@@ -90,7 +90,7 @@ export async function registerUser(data: RegisterData): Promise<User> {
       // Öğretmen onay bekliyor: userType geçici olarak 'pending_teacher'
       userType:        isTeacher ? 'pending_teacher' : (data.extra?.userType ?? 'lisans'),
       fakulte:         data.extra?.fakulte ?? null,
-      role:            'student',
+      role:            user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? 'admin' : 'student',
       bookmarks:       [],
       isVerified:      false,
       teacherApproved: isTeacher ? false : null,
@@ -161,17 +161,36 @@ export async function ensureUserProfile(user: User) {
     const ref = firestoreDoc(firestoreDb, 'users', user.uid)
     const snap = await getDoc(ref)
     if (!snap.exists()) {
+      // Yeni profil oluştur (kayıt dışı bir şekilde profil yoksa)
       await firestoreSetDoc(ref, {
-        uid:          user.uid,
-        email:        user.email,
-        displayName:  user.displayName ?? user.email?.split('@')[0] ?? 'Kullanıcı',
-        department:   '',
-        grade:        null,
-        role:         'student',
-        isVerified:   false,
-        joinedAt:     st(),
-        lastActiveAt: st(),
+        uid:                  user.uid,
+        email:                user.email,
+        displayName:          user.displayName ?? user.email?.split('@')[0] ?? 'Kullanıcı',
+        username:             null,
+        usernameChangesLeft:  2,
+        department:           '',
+        grade:                null,
+        studentId:            null,
+        userType:             'lisans',
+        fakulte:              null,
+        role:                 user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? 'admin' : 'student',
+        isVerified:           user.emailVerified,
+        isListedInDirectory:  true,
+        bookmarks:            [],
+        joinedAt:             st(),
+        lastActiveAt:         st(),
       })
+    } else {
+      // Mevcut profili güncelle — sadece eksik alanları ekle, mevcut verileri silme
+      const data = snap.data()
+      const updates: Record<string, any> = { lastActiveAt: st() }
+      if (data.isListedInDirectory === undefined) updates.isListedInDirectory = true
+      if (data.usernameChangesLeft === undefined) updates.usernameChangesLeft = 2
+      if (data.bookmarks === undefined) updates.bookmarks = []
+      if (data.userType === undefined) updates.userType = 'lisans'
+      if (!data.isVerified && user.emailVerified) updates.isVerified = true
+      const { updateDoc } = await import('firebase/firestore')
+      await updateDoc(ref, updates)
     }
   } catch (err) {
     console.warn('[ensureUserProfile] hata:', err)

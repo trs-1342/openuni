@@ -17,6 +17,7 @@ import {
   updatePost, deletePost, archivePost, pinPost,
   toggleReaction, updateComment, deleteComment as deleteCommentFn,
   createComment,
+  getListedUsers,
 } from '@/lib/firestore'
 import { timeAgo, formatFileSize, CHANNEL_META, cn } from '@/lib/utils'
 import type { Post, Space, Comment } from '@/types'
@@ -77,7 +78,7 @@ function parseInline(text: string): React.ReactNode[] {
     if (m[1]) parts.push(<strong key={i++} className="font-semibold text-text-primary">{m[2]}</strong>)
     else if (m[3]) parts.push(<em key={i++} className="italic">{m[4]}</em>)
     else if (m[5]) parts.push(<code key={i++} className="bg-surface px-1 rounded text-xs font-mono text-accent-amber">{m[6]}</code>)
-    else if (m[7]) parts.push(<span key={i++} className="text-brand font-medium">@{m[7].slice(1)}</span>)
+    else if (m[7]) { const uname = m[7].slice(1); parts.push(<Link key={i++} href={`/dashboard/profile/${uname}`} className="text-accent-amber font-semibold hover:underline" onClick={e => e.stopPropagation()}>@{uname}</Link>) }
     else if (m[8]) parts.push(<a key={i++} href={m[8]} target="_blank" rel="noopener noreferrer" className="text-brand underline underline-offset-2 break-all">{m[8]}</a>)
     last = m.index + m[0].length
   }
@@ -136,17 +137,53 @@ function ReactionBar({
 }
 
 // ─── Yorum bileşeni ───────────────────────────────────────────────────────────
+function MentionDropdown({ suggestions, onSelect }: { suggestions: any[]; onSelect: (u: string) => void }) {
+  if (!suggestions.length) return null
+  return (
+    <div className="absolute left-0 right-0 bottom-full mb-1 z-50 bg-surface border border-surface-border rounded-xl shadow-xl overflow-hidden">
+      {suggestions.map((u: any) => (
+        <button key={u.uid} type="button" onMouseDown={e => { e.preventDefault(); onSelect(u.username) }}
+          className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-surface-hover transition-colors text-left">
+          <div className="w-6 h-6 rounded-full bg-brand/20 flex items-center justify-center text-xs font-bold text-brand shrink-0">
+            {u.displayName?.[0]?.toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-text-primary">{u.displayName}</p>
+            <p className="text-2xs text-text-muted">@{u.username}</p>
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // eslint-disable-next-line
 function CommentItem({
   comment, currentUserId, currentUserRole, postAuthorId,
-  onReply, onReaction,
+  onReply, onReaction, allUsers,
 }: any) {
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(comment.content)
   const [isSaving, setIsSaving] = useState(false)
   const [deleted, setDeleted] = useState(false)
+  const [cmtMentionOpen, setCmtMentionOpen] = useState(false)
+  const [cmtMentionPos,  setCmtMentionPos]  = useState(0)
+  const [cmtMentionQ,    setCmtMentionQ]    = useState('')
+  const [cmtMentionSugg, setCmtMentionSugg] = useState<any[]>([])
+  const cmtEditRef = useRef<HTMLTextAreaElement>(null)
   const canEdit = comment.authorId === currentUserId
   const canDelete = canEdit || currentUserRole === 'moderator' || currentUserRole === 'admin'
+
+  function handleCmtEditInput(val: string, cursor: number) {
+    const before = val.slice(0, cursor)
+    const match = before.match(/@(\w*)$/)
+    if (match) {
+      const q = match[1].toLowerCase()
+      const filtered = (allUsers || []).filter((u: any) => u.username?.toLowerCase().startsWith(q) || u.displayName?.toLowerCase().includes(q)).slice(0, 6)
+      setCmtMentionQ(q); setCmtMentionPos(cursor - match[0].length)
+      setCmtMentionSugg(filtered); setCmtMentionOpen(filtered.length > 0)
+    } else setCmtMentionOpen(false)
+  }
 
   if (deleted || comment.content === '[silindi]') {
     return (
@@ -190,8 +227,18 @@ function CommentItem({
 
         {editing ? (
           <div className="space-y-2">
-            <textarea value={editText} onChange={e => setEditText(e.target.value)}
+            <div className="relative">
+            <textarea ref={cmtEditRef} value={editText} onChange={e => { setEditText(e.target.value); handleCmtEditInput(e.target.value, e.target.selectionStart) }}
               className="input text-xs resize-none" rows={3} />
+              {cmtMentionOpen && (
+                <MentionDropdown suggestions={cmtMentionSugg} onSelect={u => {
+                  const before = editText.slice(0, cmtMentionPos)
+                  const after  = editText.slice(cmtEditRef.current?.selectionStart ?? cmtMentionPos + cmtMentionQ.length + 1)
+                  setEditText(before + '@' + u + ' ' + after)
+                  setCmtMentionOpen(false)
+                }} />
+              )}
+            </div>
             <div className="flex gap-2">
               <button onClick={saveEdit} disabled={isSaving}
                 className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
@@ -255,7 +302,22 @@ export default function PostDetailPage() {
   const [editContent,setEditContent]= useState('')
   const [isSaving,   setIsSaving]   = useState(false)
   const [bookmarked, setBookmarked] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const textareaRef    = useRef<HTMLTextAreaElement>(null)
+  const editTextareaRef= useRef<HTMLTextAreaElement>(null)
+
+  // Mention autocomplete
+  const [allUsers,          setAllUsers]          = useState<any[]>([])
+  const [mentionOpen,       setMentionOpen]       = useState(false)
+  const [mentionQuery,      setMentionQuery]      = useState('')
+  const [mentionPos,        setMentionPos]        = useState(0)
+  const [mentionSuggestions,setMentionSuggestions]= useState<any[]>([])
+  const [mentionTarget,     setMentionTarget]     = useState<'comment'|'edit'>('comment')
+
+  // edit mention
+  const [editMentionOpen,   setEditMentionOpen]   = useState(false)
+  const [editMentionQuery,  setEditMentionQuery]  = useState('')
+  const [editMentionPos,    setEditMentionPos]    = useState(0)
+  const [editMentionSugg,   setEditMentionSugg]   = useState<any[]>([])
 
   const channel = space?.channels.find(c => c.slug === params.channelSlug)
   const { comments, isLoading: commentsLoading, isSubmitting, addComment } = useComments(params.postId)
@@ -270,6 +332,10 @@ export default function PostDetailPage() {
   // ban/mute kontrolü
   const isMuted = profile?.isMuted && (!profile.muteUntil || new Date(profile.muteUntil) > new Date())
   const isBanned = profile?.isBanned && (!profile.banUntil || new Date(profile.banUntil) > new Date())
+
+  useEffect(() => {
+    getListedUsers(200).then(u => setAllUsers(u)).catch(() => {})
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -352,6 +418,36 @@ export default function PostDetailPage() {
     await pinPost(post.id, !post.isPinned)
     setPost({ ...post, isPinned: !post.isPinned })
     setShowMenu(false)
+  }
+
+  function handleMentionInput(val: string, cursor: number, isEdit = false) {
+    const textBefore = val.slice(0, cursor)
+    const match = textBefore.match(/@(\w*)$/)
+    if (match) {
+      const q = match[1].toLowerCase()
+      const filtered = allUsers.filter(u => u.username?.toLowerCase().startsWith(q) || u.displayName?.toLowerCase().includes(q)).slice(0, 6)
+      if (isEdit) { setEditMentionQuery(q); setEditMentionPos(cursor - match[0].length); setEditMentionSugg(filtered); setEditMentionOpen(filtered.length > 0) }
+      else { setMentionQuery(q); setMentionPos(cursor - match[0].length); setMentionSuggestions(filtered); setMentionOpen(filtered.length > 0) }
+    } else {
+      if (isEdit) setEditMentionOpen(false)
+      else setMentionOpen(false)
+    }
+  }
+
+  function applyMention(username: string, isEdit = false) {
+    if (isEdit) {
+      const ta = editTextareaRef.current
+      const before = editContent.slice(0, editMentionPos)
+      const after  = editContent.slice(ta?.selectionStart ?? editMentionPos + editMentionQuery.length + 1)
+      setEditContent(before + '@' + username + ' ' + after)
+      setEditMentionOpen(false)
+    } else {
+      const ta = textareaRef.current
+      const before = commentText.slice(0, mentionPos)
+      const after  = commentText.slice(ta?.selectionStart ?? mentionPos + mentionQuery.length + 1)
+      setCommentText(before + '@' + username + ' ' + after)
+      setMentionOpen(false)
+    }
   }
 
   function insertMention() {
@@ -505,8 +601,26 @@ export default function PostDetailPage() {
               <div className="space-y-3">
                 <input value={editTitle} onChange={e => setEditTitle(e.target.value)}
                   className="input text-base font-semibold" placeholder="Başlık" />
-                <textarea value={editContent} onChange={e => setEditContent(e.target.value)}
+                <div className="relative">
+                <textarea ref={editTextareaRef} value={editContent} onChange={e => { setEditContent(e.target.value); handleMentionInput(e.target.value, e.target.selectionStart, true) }}
                   className="input resize-none" rows={8} placeholder="İçerik (Markdown desteklenir)" />
+                  {editMentionOpen && editMentionSugg.length > 0 && (
+                    <div className="absolute left-0 right-0 bottom-full mb-1 z-50 bg-surface border border-surface-border rounded-xl shadow-xl overflow-hidden">
+                      {editMentionSugg.map((u: any) => (
+                        <button key={u.uid} type="button" onMouseDown={e => { e.preventDefault(); applyMention(u.username, true) }}
+                          className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-surface-hover transition-colors text-left">
+                          <div className="w-6 h-6 rounded-full bg-brand/20 flex items-center justify-center text-xs font-bold text-brand shrink-0">
+                            {u.displayName?.[0]?.toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-text-primary">{u.displayName}</p>
+                            <p className="text-2xs text-text-muted">@{u.username}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <button onClick={handleSaveEdit} disabled={isSaving}
                     className="btn-primary text-sm px-4 py-2 flex items-center gap-1.5">
@@ -608,6 +722,7 @@ export default function PostDetailPage() {
                     currentUserRole={currentRole}
                     postAuthorId={post.authorId}
                     onReply={setReplyTo}
+                    allUsers={allUsers}
                     onReaction={handleCommentReaction}
                   />
                 ))}
@@ -635,15 +750,33 @@ export default function PostDetailPage() {
                 <div className="flex gap-2 items-start">
                   <Avatar name={profile?.displayName ?? 'Sen'} size="sm" className="shrink-0 mt-1" />
                   <div className="flex-1 space-y-2">
-                    <textarea
-                      ref={textareaRef}
-                      value={commentText}
-                      onChange={e => setCommentText(e.target.value)}
-                      onKeyDown={handleCommentKey}
-                      placeholder="Yorum yaz... (@mention, **bold**, *italic*, `kod`, URL desteklenir)"
-                      rows={3}
-                      className="input resize-none text-sm"
-                    />
+                    <div className="relative">
+                      <textarea
+                        ref={textareaRef}
+                        value={commentText}
+                        onChange={e => { setCommentText(e.target.value); handleMentionInput(e.target.value, e.target.selectionStart) }}
+                        onKeyDown={e => { if (e.key === 'Escape') setMentionOpen(false); handleCommentKey(e) }}
+                        placeholder="Yorum yaz... (@mention, **bold**, *italic*, `kod`, URL desteklenir)"
+                        rows={3}
+                        className="input resize-none text-sm"
+                      />
+                      {mentionOpen && mentionSuggestions.length > 0 && (
+                        <div className="absolute left-0 right-0 bottom-full mb-1 z-50 bg-surface border border-surface-border rounded-xl shadow-xl overflow-hidden">
+                          {mentionSuggestions.map((u: any) => (
+                            <button key={u.uid} type="button" onMouseDown={e => { e.preventDefault(); applyMention(u.username) }}
+                              className="flex items-center gap-2.5 w-full px-3 py-2 hover:bg-surface-hover transition-colors text-left">
+                              <div className="w-6 h-6 rounded-full bg-brand/20 flex items-center justify-center text-xs font-bold text-brand shrink-0">
+                                {u.displayName?.[0]?.toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium text-text-primary">{u.displayName}</p>
+                                <p className="text-2xs text-text-muted">@{u.username}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1">
                         <button onClick={insertMention} title="Mention"
