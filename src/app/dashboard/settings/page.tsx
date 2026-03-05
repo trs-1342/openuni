@@ -6,7 +6,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Avatar } from '@/components/ui/Avatar'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { useAuthStore } from '@/store/authStore'
-import { updateUserProfile, setUsername, isUsernameTaken } from '@/lib/firestore'
+import { updateUserProfile, setUsername as saveUsernameToFirestore, isUsernameTaken } from '@/lib/firestore'
 import { useThemeStore, THEMES } from '@/store/themeStore'
 import type { Theme } from '@/store/themeStore'
 import { changePassword, logoutUser, downloadMyData, resendVerificationEmail } from '@/lib/auth'
@@ -313,7 +313,7 @@ export default function SettingsPage() {
   const [isDownloading, setIsDownloading] = useState(false)
   const { theme, setTheme } = useThemeStore()
   // Username
-  const [username,        setUsername]        = useState('')
+  const [username,        setUsernameInput]   = useState('')
   const [usernameError,   setUsernameError]   = useState('')
   const [usernameChecking,setUsernameChecking]= useState(false)
   const [usernameSaved,   setUsernameSaved]   = useState(false)
@@ -326,7 +326,7 @@ export default function SettingsPage() {
       setFakulte((profile as any).fakulte ?? '')
       setDepartment(profile.department ?? '')
       setGrade(profile.grade?.toString() ?? '')
-      setUsername((profile as any).username ?? '')
+      setUsernameInput((profile as any).username ?? '')
       setIsListed((profile as any).isListedInDirectory !== false)
     }
   }, [profile])
@@ -340,7 +340,8 @@ export default function SettingsPage() {
     if (!isFirst && changesLeft <= 0) { setUsernameError('Kullanıcı adı değiştirme hakkınız kalmadı.'); return }
     setUsernameChecking(true); setUsernameError('')
     try {
-      await setUsername(firebaseUser.uid, username, (profile as any).username)
+      await saveUsernameToFirestore(firebaseUser.uid, username)
+      setUsernameInput(username.toLowerCase())
       setUsernameSaved(true)
       setTimeout(() => setUsernameSaved(false), 3000)
     } catch (e: any) {
@@ -504,7 +505,7 @@ export default function SettingsPage() {
                         <input
                           type="text"
                           value={username}
-                          onChange={e => { setUsername(e.target.value.toLowerCase()); setUsernameError('') }}
+                          onChange={e => { setUsernameInput(e.target.value.toLowerCase()); setUsernameError('') }}
                           placeholder="kullanici_adi"
                           className={cn('input pl-7', usernameError && 'border-accent-red/50')}
                           maxLength={30}
