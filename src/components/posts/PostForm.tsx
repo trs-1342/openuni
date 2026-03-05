@@ -210,6 +210,7 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
       const author = {
         uid: firebaseUser.uid,
         displayName: profile?.displayName ?? firebaseUser.displayName ?? 'Kullanıcı',
+        username: (profile as any)?.username ?? null,
         ...(profile?.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
         role: profile?.role ?? 'student',
       } as const

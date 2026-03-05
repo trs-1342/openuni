@@ -8,6 +8,9 @@ export interface User {
   studentEmail?: string
   displayName: string
   avatarUrl?: string
+  username?: string
+  usernameChangesLeft?: number
+  isListedInDirectory?: boolean
   studentId?: string
   userType?: UserType
   fakulte?: string
@@ -54,7 +57,7 @@ export interface ChannelRule { id: string; text: string }
 
 export interface Post {
   id: string; channelId: string; spaceId: string
-  authorId: string; author: Pick<User, 'uid' | 'displayName' | 'avatarUrl' | 'role'>
+  authorId: string; author: Pick<User, 'uid' | 'displayName' | 'avatarUrl' | 'role' | 'username'>
   title: string; content: string; attachments: Attachment[]
   tags: string[]; isPinned: boolean; isAnnouncement: boolean
   status: PostStatus; commentCount: number; viewCount: number
@@ -75,7 +78,7 @@ export type AttachmentType = 'pdf' | 'image' | 'doc' | 'video' | 'other'
 
 export interface Comment {
   id: string; postId: string; parentId?: string; replyToAuthor?: string
-  authorId: string; author: Pick<User, 'uid' | 'displayName' | 'avatarUrl' | 'role'>
+  authorId: string; author: Pick<User, 'uid' | 'displayName' | 'avatarUrl' | 'role' | 'username'>
   content: string; reactions?: Record<string, string[]>
   isEdited: boolean; createdAt: Date; updatedAt: Date
 }

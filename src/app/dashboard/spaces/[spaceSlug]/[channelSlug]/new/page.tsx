@@ -2,11 +2,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, notFound } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { PostForm } from '@/components/posts/PostForm'
 import { getSpaceBySlug } from '@/lib/firestore'
 import { CHANNEL_META, cn } from '@/lib/utils'
+import { useAuthStore } from '@/store/authStore'
+import { useUserProfile } from '@/hooks/useUserProfile'
 import Link from 'next/link'
 import { ChevronRight, Loader2, Menu } from 'lucide-react'
 import type { Space, Channel } from '@/types'
@@ -17,6 +19,11 @@ export default function NewPostPage() {
   const [channel, setChannel] = useState<Channel | null>(null)
   const [loading, setLoading] = useState(true)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const { user: firebaseUser } = useAuthStore()
+  const { profile } = useUserProfile()
+  const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? 'khalil.khattab@ogr.gelisim.edu.tr'
+  const isAdmin = firebaseUser?.email === ADMIN_EMAIL || profile?.role === 'admin'
+  const isMod   = profile?.role === 'moderator'
 
   useEffect(() => {
     getSpaceBySlug(params.spaceSlug).then(s => {
@@ -38,7 +45,21 @@ export default function NewPostPage() {
 
   if (!space || !channel) return null
 
-  const meta = CHANNEL_META[channel.type]
+  // Duyuru kanalında sadece admin paylaşım yapabilir
+  if (channel.type === 'announcement' && !isAdmin && !isMod) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background flex-col gap-3 text-center px-4">
+        <span className="text-4xl">📣</span>
+        <p className="font-semibold text-text-primary">Bu kanal sadece yöneticiler için</p>
+        <p className="text-sm text-text-muted">Duyuru kanalına yalnızca admin ve moderatörler paylaşım yapabilir.</p>
+        <button onClick={() => window.history.back()} className="mt-2 text-xs text-brand hover:text-brand-hover transition-colors">
+          Geri Dön
+        </button>
+      </div>
+    )
+  }
+
+  const meta = CHANNEL_META[channel.type as keyof typeof CHANNEL_META] ?? Object.values(CHANNEL_META)[0]
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

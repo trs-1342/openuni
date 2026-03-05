@@ -2,6 +2,7 @@ import React, { type ReactNode } from 'react'
 import type { Metadata } from 'next'
 import { Inter, Syne, JetBrains_Mono } from 'next/font/google'
 import { AuthProvider } from '@/components/providers/AuthProvider'
+import { ThemeProvider } from '@/components/providers/ThemeProvider'
 import './globals.css'
 
 const inter = Inter({
@@ -37,8 +38,19 @@ export default function RootLayout({
   children: ReactNode
 }) {
   return (
-    <html lang="tr" className={`${inter.variable} ${syne.variable} ${jetbrainsMono.variable}`}>
+    <html lang="tr" data-theme="dark" className={`${inter.variable} ${syne.variable} ${jetbrainsMono.variable}`}>
       <body className="bg-background text-text-primary font-sans antialiased">
+      <script dangerouslySetInnerHTML={{ __html: `
+        (function() {
+          try {
+            var t = JSON.parse(localStorage.getItem('openuni-theme') || '{}');
+            var theme = t.state && t.state.theme ? t.state.theme : 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+          } catch(e) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+          }
+        })();
+      `}} />
         <AuthProvider>
           {children}
         </AuthProvider>

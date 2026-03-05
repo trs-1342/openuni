@@ -6,7 +6,9 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Avatar } from '@/components/ui/Avatar'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { useAuthStore } from '@/store/authStore'
-import { updateUserProfile } from '@/lib/firestore'
+import { updateUserProfile, setUsername, isUsernameTaken } from '@/lib/firestore'
+import { useThemeStore, THEMES } from '@/store/themeStore'
+import type { Theme } from '@/store/themeStore'
 import { changePassword, logoutUser, downloadMyData, resendVerificationEmail } from '@/lib/auth'
 import { updateProfile, sendEmailVerification, reload } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
@@ -17,8 +19,9 @@ import {
   Save, CheckCircle, AlertCircle, Menu, Clock,
   Lock, Eye, EyeOff, Download, RefreshCw, ShieldCheck,
   ChevronRight, Info, BookOpen, FileText, ExternalLink,
+  Palette, Loader2,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, validateUsername } from '@/lib/utils'
 import {
   getFakulteList, getBolumList, getGradeOptions,
   USER_TYPE_LABELS, type UserType,
@@ -297,7 +300,7 @@ export default function SettingsPage() {
   const { user: firebaseUser } = useAuthStore()
   const { profile, isLoading }  = useUserProfile()
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [activeTab, setActiveTab]   = useState<'profile' | 'security' | 'data'>('profile')
+  const [activeTab, setActiveTab]   = useState<'profile' | 'security' | 'data' | 'appearance'>('profile')
 
   const [displayName,  setDisplayName]  = useState('')
   const [userType,     setUserType]     = useState<UserType>('lisans')
@@ -308,6 +311,13 @@ export default function SettingsPage() {
   const [saved,        setSaved]        = useState(false)
   const [profileError, setProfileError] = useState('')
   const [isDownloading, setIsDownloading] = useState(false)
+  const { theme, setTheme } = useThemeStore()
+  // Username
+  const [username,        setUsername]        = useState('')
+  const [usernameError,   setUsernameError]   = useState('')
+  const [usernameChecking,setUsernameChecking]= useState(false)
+  const [usernameSaved,   setUsernameSaved]   = useState(false)
+  const [isListed,        setIsListed]        = useState(true)
 
   useEffect(() => {
     if (profile) {
@@ -316,8 +326,34 @@ export default function SettingsPage() {
       setFakulte((profile as any).fakulte ?? '')
       setDepartment(profile.department ?? '')
       setGrade(profile.grade?.toString() ?? '')
+      setUsername((profile as any).username ?? '')
+      setIsListed((profile as any).isListedInDirectory !== false)
     }
   }, [profile])
+
+  async function handleSaveUsername() {
+    if (!firebaseUser || !profile) return
+    const err = validateUsername(username)
+    if (err) { setUsernameError(err); return }
+    const changesLeft = (profile as any).usernameChangesLeft ?? 2
+    const isFirst = !(profile as any).username
+    if (!isFirst && changesLeft <= 0) { setUsernameError('Kullanıcı adı değiştirme hakkınız kalmadı.'); return }
+    setUsernameChecking(true); setUsernameError('')
+    try {
+      await setUsername(firebaseUser.uid, username, (profile as any).username)
+      setUsernameSaved(true)
+      setTimeout(() => setUsernameSaved(false), 3000)
+    } catch (e: any) {
+      setUsernameError(e?.message ?? 'Hata oluştu.')
+    } finally { setUsernameChecking(false) }
+  }
+
+  async function handleToggleListed() {
+    if (!firebaseUser) return
+    const newVal = !isListed
+    setIsListed(newVal)
+    await updateUserProfile(firebaseUser.uid, { isListedInDirectory: newVal } as any)
+  }
 
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault()
@@ -363,9 +399,10 @@ export default function SettingsPage() {
   const currentName = profile?.displayName ?? firebaseUser?.displayName ?? 'Kullanıcı'
 
   const tabs = [
-    { id: 'profile',  label: 'Profil',   icon: User },
-    { id: 'security', label: 'Güvenlik', icon: Shield },
-    { id: 'data',     label: 'Verilerim', icon: Download },
+    { id: 'profile',    label: 'Profil',   icon: User },
+    { id: 'security',   label: 'Güvenlik', icon: Shield },
+    { id: 'appearance', label: 'Tema',      icon: Palette },
+    { id: 'data',       label: 'Verilerim', icon: Download },
   ] as const
 
   return (
@@ -453,6 +490,65 @@ export default function SettingsPage() {
                         placeholder="Ad Soyad" className="input pl-10" />
                     </div>
                   </div>
+                  {/* Kullanıcı Adı */}
+                  <div className="border border-surface-border rounded-xl p-4 space-y-3 bg-surface/30">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-text-secondary">Kullanıcı Adı</label>
+                      <span className="text-2xs text-text-muted bg-surface px-2 py-0.5 rounded-full border border-surface-border">
+                        {(profile as any)?.usernameChangesLeft ?? 2} değiştirme hakkı kaldı
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-muted">@</span>
+                        <input
+                          type="text"
+                          value={username}
+                          onChange={e => { setUsername(e.target.value.toLowerCase()); setUsernameError('') }}
+                          placeholder="kullanici_adi"
+                          className={cn('input pl-7', usernameError && 'border-accent-red/50')}
+                          maxLength={30}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSaveUsername}
+                        disabled={usernameChecking || !username}
+                        className="px-4 py-2 rounded-lg bg-brand text-white text-xs font-semibold hover:bg-brand/90 transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                      >
+                        {usernameChecking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : usernameSaved ? <CheckCircle className="w-3.5 h-3.5" /> : null}
+                        {usernameSaved ? 'Kaydedildi' : 'Kaydet'}
+                      </button>
+                    </div>
+                    {usernameError && (
+                      <p className="text-xs text-accent-red flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 shrink-0" />{usernameError}
+                      </p>
+                    )}
+                    <p className="text-2xs text-text-muted">Harf, rakam, nokta (.), alt çizgi (_) ve tire (-) kullanılabilir. . _ - ile başlayıp bitemez.</p>
+                    {/* Dizinde listeleme */}
+                    <div className="flex items-center justify-between pt-2 border-t border-surface-border">
+                      <div>
+                        <p className="text-xs font-medium text-text-secondary">Kullanıcılar listesinde görün</p>
+                        <p className="text-2xs text-text-muted mt-0.5">Diğer kullanıcılar seni kullanıcı listesinde görebilir</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleToggleListed}
+                        className={cn(
+                          'relative w-10 h-5.5 rounded-full transition-colors shrink-0',
+                          isListed ? 'bg-brand' : 'bg-surface-active'
+                        )}
+                        style={{ minWidth: 40, height: 22 }}
+                      >
+                        <span className={cn(
+                          'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                          isListed ? 'translate-x-5' : 'translate-x-0.5'
+                        )} />
+                      </button>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1.5">
                       E-posta <span className="text-text-muted font-normal">(değiştirilemez)</span>
@@ -588,6 +684,56 @@ export default function SettingsPage() {
           )}
 
           {/* Verilerim Tab */}
+          {/* ── Tema Sekmesi ── */}
+          {activeTab === 'appearance' && (
+            <section className="space-y-4">
+              <div className="card space-y-5">
+                <div>
+                  <h3 className="text-sm font-semibold text-text-primary mb-1">Tema</h3>
+                  <p className="text-xs text-text-muted">Arayüz renk temasını seç. Tercih tarayıcında saklanır.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {THEMES.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTheme(t.id as Theme)}
+                      className={cn(
+                        'relative flex flex-col gap-3 p-4 rounded-xl border-2 transition-all text-left',
+                        theme === t.id
+                          ? 'border-brand bg-brand/5'
+                          : 'border-surface-border hover:border-surface-active'
+                      )}
+                    >
+                      {/* Renk önizleme */}
+                      <div className="flex gap-1.5">
+                        {t.preview.map((color, i) => (
+                          <div
+                            key={i}
+                            className="rounded-md flex-1 h-8 border border-black/10"
+                            style={{ backgroundColor: color }}
+                          />
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{t.emoji}</span>
+                        <span className={cn(
+                          'text-sm font-medium',
+                          theme === t.id ? 'text-brand' : 'text-text-primary'
+                        )}>
+                          {t.label}
+                        </span>
+                        {theme === t.id && (
+                          <span className="ml-auto text-2xs bg-brand text-white px-1.5 py-0.5 rounded-full font-medium">Aktif</span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
+
           {activeTab === 'data' && (
             <section className="space-y-4">
               <div>

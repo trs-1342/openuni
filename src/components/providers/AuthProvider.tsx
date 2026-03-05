@@ -11,7 +11,6 @@ export function AuthProvider({ children }: any) {
     const unsubscribe = subscribeToAuthState(async (user) => {
       setUser(user)
       setInitialized()
-      // Firestore profili yoksa oluştur (ilk giriş veya Firestore yazım hatası sonrası)
       if (user?.emailVerified) {
         await ensureUserProfile(user)
       }

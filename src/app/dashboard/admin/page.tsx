@@ -21,7 +21,7 @@ import {
   ChevronDown, Clock, Filter, GraduationCap, Check, XCircle,
 } from 'lucide-react'
 
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? ''
+const ADMIN_EMAIL = 'khalil.khattab@ogr.gelisim.edu.tr'
 
 // ─── Ban/Mute Dialog ──────────────────────────────────────────────────────────
 function ModerationDialog({
@@ -108,10 +108,11 @@ function ModerationDialog({
 }
 
 // ─── Kullanıcı Satırı ─────────────────────────────────────────────────────────
-function UserRow({ user: u, onAction }: any) {
+function UserRow({ user: u, onAction, currentUserEmail }: any) {
   const [open, setOpen] = useState(false)
   const isBanned = u.isBanned && (!u.banUntil || new Date(u.banUntil) > new Date())
   const isMuted  = u.isMuted  && (!u.muteUntil || new Date(u.muteUntil) > new Date())
+  const isSelf   = u.email === currentUserEmail || u.email === 'khalil.khattab@ogr.gelisim.edu.tr'
 
   return (
     <div className="border border-surface-border rounded-xl overflow-hidden">
@@ -153,8 +154,8 @@ function UserRow({ user: u, onAction }: any) {
                     <ShieldCheck className="w-3 h-3" />Mod Yap
                   </button>
             )}
-            {/* Sustur/Kaldır */}
-            {isMuted
+            {/* Sustur/Kaldır - kendi hesabında gösterme */}
+            {!isSelf && (isMuted
               ? <button onClick={() => onAction(u, 'unmute')}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-accent-green/30 text-accent-green hover:bg-accent-green/10 transition-all">
                   <Volume2 className="w-3 h-3" />Susturmayı Kaldır
@@ -163,9 +164,9 @@ function UserRow({ user: u, onAction }: any) {
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-accent-amber/30 text-accent-amber hover:bg-accent-amber/10 transition-all">
                   <VolumeX className="w-3 h-3" />Sustur
                 </button>
-            }
-            {/* Engelle/Kaldır */}
-            {isBanned
+            )}
+            {/* Engelle/Kaldır - kendi hesabında gösterme */}
+            {!isSelf && (isBanned
               ? <button onClick={() => onAction(u, 'unban')}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-accent-green/30 text-accent-green hover:bg-accent-green/10 transition-all">
                   <CheckCircle className="w-3 h-3" />Engeli Kaldır
@@ -174,7 +175,7 @@ function UserRow({ user: u, onAction }: any) {
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-accent-red/30 text-accent-red hover:bg-accent-red/10 transition-all">
                   <Ban className="w-3 h-3" />Engelle
                 </button>
-            }
+            )}
           </div>
           {isBanned && u.banReason && (
             <p className="text-2xs text-text-muted bg-accent-red/5 border border-accent-red/10 rounded px-2 py-1.5">
@@ -499,7 +500,7 @@ export default function AdminPage() {
               {filteredUsers.length === 0
                 ? <div className="text-center py-8 text-text-muted text-sm">Sonuç bulunamadı.</div>
                 : filteredUsers.map((u: any) => (
-                    <UserRow key={u.uid} user={u} onAction={handleUserAction} />
+                    <UserRow key={u.uid} user={u} onAction={handleUserAction} currentUserEmail={firebaseUser?.email} />
                   ))
               }
             </div>

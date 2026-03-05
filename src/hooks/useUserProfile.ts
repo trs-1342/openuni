@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getUserProfile, updateUserLastActive } from '@/lib/firestore'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
+import { updateUserLastActive } from '@/lib/firestore'
 import { useAuthStore } from '@/store/authStore'
 import type { User } from '@/types'
 
@@ -15,12 +17,23 @@ export function useUserProfile() {
       setIsLoading(false)
       return
     }
-    getUserProfile(firebaseUser.uid).then((p) => {
-      setProfile(p)
+    // Realtime listener — kayıt/güncelleme anında yansır
+    const unsub = onSnapshot(doc(db, 'users', firebaseUser.uid), (snap) => {
+      if (snap.exists()) {
+        const d = snap.data()
+        setProfile({
+          ...d,
+          uid: snap.id,
+          joinedAt:     d.joinedAt?.toDate?.()     ?? new Date(),
+          lastActiveAt: d.lastActiveAt?.toDate?.() ?? new Date(),
+          banUntil:     d.banUntil?.toDate?.()     ?? null,
+          muteUntil:    d.muteUntil?.toDate?.()    ?? null,
+        } as User)
+      }
       setIsLoading(false)
-      // Son aktif güncelle
-      updateUserLastActive(firebaseUser.uid).catch(() => {})
     })
+    updateUserLastActive(firebaseUser.uid).catch(() => {})
+    return () => unsub()
   }, [firebaseUser?.uid])
 
   return { profile, isLoading }

@@ -424,6 +424,118 @@ export async function toggleBookmark(userId: string, postId: string, current: st
   })
 }
 
+
+export async function getPostsByUser(uid: string, limitCount = 20): Promise<Post[]> {
+  const snap = await getDocs(
+    query(collection(db, 'posts'),
+      where('authorId', '==', uid),
+      where('status', '==', 'published'),
+      orderBy('createdAt', 'desc'),
+      limit(limitCount)
+    )
+  )
+  return snap.docs.map(postFromDoc)
+}
+
+export async function getUserStats(uid: string): Promise<{ postCount: number; commentCount: number }> {
+  const [postsSnap, commentsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'posts'), where('authorId', '==', uid), where('status', '==', 'published'))),
+    getDocs(query(collection(db, 'comments'), where('authorId', '==', uid))),
+  ])
+  return { postCount: postsSnap.size, commentCount: commentsSnap.size }
+}
+
+
+// ─── Username Sistemi ─────────────────────────────────────────────────────────
+export async function isUsernameTaken(username: string): Promise<boolean> {
+  const snap = await getDocs(
+    query(collection(db, 'users'), where('username', '==', username.toLowerCase()), limit(1))
+  )
+  return !snap.empty
+}
+
+export async function setUsername(uid: string, username: string, currentUsername?: string): Promise<void> {
+  const normalized = username.toLowerCase()
+  // Başkası kullanıyor mu?
+  const snap = await getDocs(
+    query(collection(db, 'users'), where('username', '==', normalized), limit(1))
+  )
+  if (!snap.empty && snap.docs[0].id !== uid) {
+    throw new Error('Bu kullanıcı adı zaten alınmış.')
+  }
+  const userRef = doc(db, 'users', uid)
+  const userSnap = await getDoc(userRef)
+  if (!userSnap.exists()) throw new Error('Kullanıcı bulunamadı.')
+  const userData = userSnap.data()
+  const changesLeft = userData.usernameChangesLeft ?? 2
+  // İlk kez atanıyorsa (kayıt sonrası) hak düşmez
+  const isFirstTime = !userData.username
+  if (!isFirstTime && changesLeft <= 0) {
+    throw new Error('Kullanıcı adı değiştirme hakkınız kalmadı.')
+  }
+  await updateDoc(userRef, {
+    username: normalized,
+    usernameChangesLeft: isFirstTime ? 2 : changesLeft - 1,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function getArchivedPosts(uid: string): Promise<Post[]> {
+  const snap = await getDocs(
+    query(collection(db, 'posts'),
+      where('authorId', '==', uid),
+      where('status', '==', 'archived'),
+      orderBy('updatedAt', 'desc'),
+      limit(50)
+    )
+  )
+  return snap.docs.map(postFromDoc)
+}
+
+export async function restorePost(postId: string): Promise<void> {
+  await updateDoc(doc(db, 'posts', postId), { status: 'published', updatedAt: serverTimestamp() })
+}
+
+
+
+export async function getListedUsers(limitCount = 100): Promise<User[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, 'users'),
+      where('isListedInDirectory', '==', true),
+      orderBy('displayName', 'asc'),
+      limit(limitCount)
+    )
+  )
+  return snap.docs.map(d => {
+    const data = d.data()
+    return {
+      ...data,
+      uid: d.id,
+      joinedAt:     data.joinedAt?.toDate?.()     ?? new Date(),
+      lastActiveAt: data.lastActiveAt?.toDate?.() ?? new Date(),
+      banUntil:     data.banUntil?.toDate?.()     ?? null,
+      muteUntil:    data.muteUntil?.toDate?.()    ?? null,
+    } as User
+  })
+}
+
+export async function getUserByUsername(username: string): Promise<User | null> {
+  const snap = await getDocs(
+    query(collection(db, 'users'), where('username', '==', username.toLowerCase()), limit(1))
+  )
+  if (snap.empty) return null
+  const d = snap.docs[0].data()
+  return {
+    ...d,
+    uid: snap.docs[0].id,
+    joinedAt:     d.joinedAt?.toDate?.()     ?? new Date(),
+    lastActiveAt: d.lastActiveAt?.toDate?.() ?? new Date(),
+    banUntil:     d.banUntil?.toDate?.()     ?? null,
+    muteUntil:    d.muteUntil?.toDate?.()    ?? null,
+  } as User
+}
+
 export async function getUserProfile(uid: string): Promise<User | null> {
   const snap = await getDoc(doc(db, 'users', uid))
   if (!snap.exists()) return null

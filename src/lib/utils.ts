@@ -143,6 +143,30 @@ export function isValidStudentEmail(email: string): boolean {
   return /^[a-z0-9._%+\-]+@ogr\.gelisim\.edu\.tr$/.test(normalized)
 }
 
+
+// ─── Username Validasyon ──────────────────────────────────────────────────────
+export function validateUsername(username: string): string | null {
+  if (!username) return 'Kullanıcı adı boş olamaz.'
+  if (username.length < 3) return 'En az 3 karakter olmalı.'
+  if (username.length > 30) return 'En fazla 30 karakter olabilir.'
+  if (/[^a-zA-Z0-9._-]/.test(username)) return 'Sadece harf, rakam, nokta (.), alt çizgi (_) ve tire (-) kullanılabilir.'
+  if (/^[._-]/.test(username)) return '. _ - ile başlayamaz.'
+  if (/[._-]$/.test(username)) return '. _ - ile bitemez.'
+  if (/[._-]{2,}/.test(username)) return 'Ardarda özel karakter kullanılamaz.'
+  return null
+}
+
+export function generateUsername(displayName: string, uid: string): string {
+  // displayName'den türkçe karakterleri temizle
+  const base = displayName
+    .toLowerCase()
+    .replace(/ç/g,'c').replace(/ğ/g,'g').replace(/ı/g,'i').replace(/ö/g,'o').replace(/ş/g,'s').replace(/ü/g,'u')
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 15)
+  const suffix = uid.slice(0, 5)
+  return base ? `${base}_${suffix}` : `user_${suffix}`
+}
+
 // ─── Truncate Text ────────────────────────────────────────────────────────────
 export function truncate(str: string, length: number): string {
   if (str.length <= length) return str

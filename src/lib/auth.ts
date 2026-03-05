@@ -14,7 +14,7 @@ import {
 } from 'firebase/auth'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from './firebase'
-import { isValidStudentEmail } from './utils'
+import { isValidStudentEmail, generateUsername } from './utils'
 
 const AUTH_ERRORS: Record<string, string> = {
   'auth/user-not-found':         'Bu e-posta ile kayıtlı hesap bulunamadı.',
@@ -59,26 +59,19 @@ export async function registerUser(data: RegisterData): Promise<User> {
     await updateProfile(user, { displayName: data.displayName })
   } catch { /* kritik değil */ }
 
-  // 3) Kendi API route'umuz ile doğrulama e-postası gönder
+  // 3) Firebase doğrulama e-postası gönder
+  // Firebase kendi emailini gönderiyor — en güvenilir yöntem
+  // actionCodeSettings.url = kayıt sonrası yönlendirilecek sayfa (token Firebase tarafından işleniyor)
   try {
-    // Firebase'den doğrulama linki üret
-    const { sendEmailVerification: fbSendVerification } = await import('firebase/auth')
     const actionCodeSettings = {
-      url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://openigu.vercel.app'}/auth/verify-email`,
+      url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://openigu.vercel.app'}/dashboard`,
       handleCodeInApp: false,
     }
-    await fbSendVerification(user, actionCodeSettings)
-    // Kendi güzel emailimizi de gönder (background'da)
-    fetch('/api/send-verification', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email:            user.email,
-        displayName:      data.displayName,
-        verificationLink: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://openigu.vercel.app'}/auth/verify-email`,
-      }),
-    }).catch(() => {/* sessizce hata yut */})
-  } catch { /* e-posta sonra tekrar gönderilebilir */ }
+    await sendEmailVerification(user, actionCodeSettings)
+  } catch (emailErr: any) {
+    // Email gönderilemedi ama hesap oluşturuldu — kullanıcı settings'ten tekrar gönderebilir
+    console.warn('[register] Email verification failed:', emailErr?.message)
+  }
 
   // 4) Firestore'a kullanıcı profili kaydet — hata olsa bile auth başarılı sayılır
   try {
@@ -87,6 +80,9 @@ export async function registerUser(data: RegisterData): Promise<User> {
       uid:             user.uid,
       email:           user.email,
       displayName:     data.displayName,
+      username:        generateUsername(data.displayName, user.uid),
+      usernameChangesLeft: 2,
+      isListedInDirectory: true,
       department:      data.department,
       grade:           data.grade === 'hazirlik' ? 'hazirlik' : data.grade ? parseInt(data.grade) : null,
       studentId:       data.extra?.studentId ?? null,
@@ -213,13 +209,58 @@ export async function checkEmailVerified(): Promise<boolean> {
 
 // ─── Veri İndirme (KVKK) ──────────────────────────────────────────────────
 export async function downloadMyData(uid: string): Promise<void> {
-  const { getUserProfile } = await import('./firestore')
-  const profile = await getUserProfile(uid)
+  const { getUserProfile, getPostsByUser, getArchivedPosts } = await import('./firestore')
+  const [profile, publishedPosts, archivedPosts] = await Promise.all([
+    getUserProfile(uid),
+    getPostsByUser(uid, 200),
+    getArchivedPosts(uid),
+  ])
+
+  // Şifre alanlarını temizle
+  const safeProfile = profile ? Object.fromEntries(
+    Object.entries(profile).filter(([k]) => !['password', 'passwordHash'].includes(k))
+  ) : null
+
+  // Medya URL'lerini topla
+  const allPosts = [...publishedPosts, ...archivedPosts]
+  const mediaFiles = allPosts.flatMap(p =>
+    (p.attachments ?? []).map((a: any) => ({
+      postId:     p.id,
+      postTitle:  p.title,
+      fileName:   a.name,
+      fileType:   a.type,
+      fileSize:   a.size,
+      url:        a.url,
+      uploadedAt: a.uploadedAt,
+    }))
+  )
+
   const data = {
     exportedAt: new Date().toISOString(),
-    profile,
-    notice: 'OpenUni platformundan dışa aktarılan kişisel verileriniz.',
+    notice: 'OpenUni platformundan dışa aktarılan kişisel verileriniz. Şifre bilgisi dahil edilmemiştir.',
+    profile: safeProfile,
+    stats: {
+      publishedPostCount: publishedPosts.length,
+      archivedPostCount:  archivedPosts.length,
+      totalMediaCount:    mediaFiles.length,
+    },
+    posts: {
+      published: publishedPosts.map(p => ({
+        id: p.id, title: p.title, content: p.content,
+        tags: p.tags, channelId: p.channelId, spaceId: p.spaceId,
+        viewCount: p.viewCount, commentCount: p.commentCount,
+        createdAt: p.createdAt, updatedAt: p.updatedAt,
+        attachments: p.attachments,
+      })),
+      archived: archivedPosts.map(p => ({
+        id: p.id, title: p.title, content: p.content,
+        tags: p.tags, createdAt: p.createdAt, updatedAt: p.updatedAt,
+        attachments: p.attachments,
+      })),
+    },
+    media: mediaFiles,
   }
+
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')

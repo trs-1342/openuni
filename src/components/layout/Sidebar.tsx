@@ -13,7 +13,7 @@ import { logoutUser } from '@/lib/auth'
 import {
   Bell, ChevronDown, ChevronRight, Search, Plus,
   Home, Bookmark, Users, X, LogOut, Settings,
-  Info, BookOpen, Shield, Mail, FileText, Hash, ShieldAlert,
+  Info, BookOpen, Shield, Mail, FileText, Hash, ShieldAlert, Archive,
 } from 'lucide-react'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Space } from '@/types'
@@ -24,7 +24,9 @@ const ADMIN_EMAIL = 'khalil.khattab@ogr.gelisim.edu.tr'
 const STATIC_PAGES = [
   { label: 'Ana Sayfa',        href: '/dashboard',                icon: Home,     category: 'Sayfa', keywords: ['anasayfa', 'dashboard', 'panel'] },
   { label: 'Bildirimler',      href: '/dashboard/notifications',  icon: Bell,     category: 'Sayfa', keywords: ['bildirim', 'notification'] },
+  { label: 'Üyeler',           href: '/dashboard/members',        icon: Users,    category: 'Sayfa', keywords: ['üye', 'kullanıcı', 'member', 'liste', 'directory'] },
   { label: 'Kaydedilenler',    href: '/dashboard/bookmarks',      icon: Bookmark, category: 'Sayfa', keywords: ['kaydet', 'bookmark', 'favori'] },
+  { label: 'Arşivlenenler',     href: '/dashboard/archived',       icon: Archive,  category: 'Sayfa', keywords: ['arşiv', 'archive', 'arşivlendi'] },
   { label: 'Topluluklar',      href: '/dashboard/spaces',         icon: Users,    category: 'Sayfa', keywords: ['topluluk', 'space', 'bölüm'] },
   { label: 'Profil & Ayarlar', href: '/dashboard/settings',       icon: Settings, category: 'Sayfa', keywords: ['profil', 'ayar', 'şifre', 'hesap', 'setting'] },
   { label: 'Hakkımızda',       href: '/about',                    icon: Info,     category: 'Bilgi', keywords: ['hakkında', 'about', 'nedir', 'kim'] },
@@ -578,7 +580,9 @@ export function Sidebar({ onClose }: SidebarProps) {
   const topItems = [
     { label: 'Ana Sayfa',     href: '/dashboard',              icon: Home },
     { label: 'Bildirimler',   href: '/dashboard/notifications', icon: Bell,     badge: unreadCount },
-    { label: 'Kaydedilenler', href: '/dashboard/bookmarks',     icon: Bookmark },
+    { label: 'Üyeler',        href: '/dashboard/members',       icon: Users },
+  { label: 'Kaydedilenler', href: '/dashboard/bookmarks',     icon: Bookmark },
+  { label: 'Arşivlenenler',  href: '/dashboard/archived',      icon: Archive },
     { label: 'Topluluklar',   href: '/dashboard/spaces',        icon: Users },
   ]
 
@@ -595,8 +599,16 @@ export function Sidebar({ onClose }: SidebarProps) {
       <aside className="flex h-screen w-[240px] shrink-0 flex-col bg-background-secondary border-r border-surface-border">
         {/* Logo */}
         <div className="flex items-center gap-3 px-4 py-4 border-b border-surface-border">
-          <div className="w-7 h-7 rounded bg-brand flex items-center justify-center shrink-0">
-            <span className="text-white font-display font-bold text-sm">O</span>
+          <div className="w-8 h-8 rounded-lg shrink-0 overflow-hidden flex items-center justify-center bg-brand/10 border border-brand/20">
+            <img
+              src="/favicon.svg"
+              alt="OpenUni"
+              className="w-6 h-6 object-contain"
+              onError={(e: any) => {
+                e.currentTarget.style.display = 'none'
+                e.currentTarget.parentElement!.innerHTML = '<span class="text-brand font-display font-bold text-sm">O</span>'
+              }}
+            />
           </div>
           <div className="flex-1">
             <div className="font-display font-semibold text-sm text-text-primary leading-none">OpenUni</div>

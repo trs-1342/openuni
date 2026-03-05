@@ -154,7 +154,6 @@ export default function DashboardPage() {
                 </span>
               </Link>
             )}
-            <Avatar name={displayName} size="sm" />
           </div>
         </div>
 
