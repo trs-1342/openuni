@@ -37,6 +37,7 @@ export interface RegisterData {
   displayName: string
   department: string
   grade?: string
+  username?: string
   extra?: {
     studentId?: string
     userType?: string
@@ -80,7 +81,7 @@ export async function registerUser(data: RegisterData): Promise<User> {
       uid:             user.uid,
       email:           user.email,
       displayName:     data.displayName,
-      username:        generateUsername(data.displayName, user.uid),
+      username:        data.username ?? generateUsername(data.displayName, user.uid),
       usernameChangesLeft: 2,
       isListedInDirectory: true,
       department:      data.department,

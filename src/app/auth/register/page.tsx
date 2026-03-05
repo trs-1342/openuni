@@ -7,11 +7,12 @@ import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, ArrowRight, Lock, Mail, User, GraduationCap, AlertCircle, CheckCircle, Hash, ChevronLeft } from 'lucide-react'
 import { cn, isValidStudentEmail } from '@/lib/utils'
 import { registerUser, getAuthErrorMessage } from '@/lib/auth'
+import { validateUsername } from '@/lib/utils'
 import { USER_TYPE_LABELS, getFakulteList, getBolumList, getGradeOptions } from '@/lib/departments'
 import type { UserType } from '@/lib/departments'
 
 interface FormState {
-  email: string; displayName: string; studentId: string
+  email: string; displayName: string; studentId: string; username: string
   userType: UserType | ''; fakulte: string; department: string; grade: string
   password: string; passwordConfirm: string
 }
@@ -37,7 +38,7 @@ function PasswordStrength({ password }: { password: string }) {
 export default function RegisterPage() {
   const router = useRouter()
   const [form, setForm] = useState<FormState>({
-    email: '', displayName: '', studentId: '', userType: '',
+    email: '', displayName: '', studentId: '', username: '', userType: '',
     fakulte: '', department: '', grade: '', password: '', passwordConfirm: '',
   })
   const [showPassword, setShowPassword] = useState(false)
@@ -60,7 +61,8 @@ export default function RegisterPage() {
   const isTeacher = form.userType === 'ogretmen' || form.userType === 'diger'
   const step1Ok = emailValid && form.displayName.trim() && form.userType &&
     (isTeacher || (form.fakulte && form.department))
-  const canSubmit = step1Ok && form.password.length >= 8 && passwordsMatch
+  const usernameErr = form.username ? validateUsername(form.username) : null
+  const canSubmit = step1Ok && form.username.trim().length >= 3 && !usernameErr && form.password.length >= 8 && passwordsMatch
 
   const fakulteList = form.userType ? getFakulteList(form.userType as UserType) : []
   const bolumList = form.fakulte ? getBolumList(form.userType as UserType, form.fakulte) : []
@@ -75,6 +77,7 @@ export default function RegisterPage() {
         email: form.email, password: form.password,
         displayName: form.displayName, department: form.department,
         grade: form.grade || undefined,
+        username: form.username.toLowerCase().trim(),
         extra: { studentId: form.studentId, userType: form.userType, fakulte: form.fakulte },
       })
       router.replace('/auth/verify-email')
@@ -130,6 +133,22 @@ export default function RegisterPage() {
                   <input type="text" value={form.displayName} onChange={e => update('displayName', e.target.value)}
                     placeholder="Ad Soyad" className="input pl-10" required />
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                  Kullanıcı Adı * <span className="text-text-muted font-normal">(sonradan değiştirilebilir)</span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">@</span>
+                  <input type="text" value={form.username}
+                    onChange={e => update('username', e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, ''))}
+                    placeholder="kullanici_adi" className={cn('input pl-8',
+                      form.username && usernameErr && 'border-accent-red/50',
+                      form.username && !usernameErr && form.username.length >= 3 && 'border-accent-green/50'
+                    )} required />
+                </div>
+                {form.username && usernameErr && <p className="text-2xs text-accent-red mt-1">{usernameErr}</p>}
+                {form.username && !usernameErr && form.username.length >= 3 && <p className="text-2xs text-accent-green mt-1">✓ Geçerli kullanıcı adı</p>}
               </div>
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1.5">Öğrenci No <span className="text-text-muted font-normal">(isteğe bağlı)</span></label>
