@@ -438,10 +438,11 @@ export async function getPostsByUser(uid: string, limitCount = 20): Promise<Post
 
 export async function getUserStats(uid: string): Promise<{ postCount: number; commentCount: number }> {
   const [postsSnap, commentsSnap] = await Promise.all([
-    getDocs(query(collection(db, 'posts'), where('authorId', '==', uid), where('status', '==', 'published'))),
+    getDocs(query(collection(db, 'posts'), where('authorId', '==', uid))),
     getDocs(query(collection(db, 'comments'), where('authorId', '==', uid))),
   ])
-  return { postCount: postsSnap.size, commentCount: commentsSnap.size }
+  const postCount = postsSnap.docs.filter(d => d.data().status === 'published').length
+  return { postCount, commentCount: commentsSnap.size }
 }
 
 
