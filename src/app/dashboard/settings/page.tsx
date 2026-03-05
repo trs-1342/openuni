@@ -528,8 +528,8 @@ export default function SettingsPage() {
                     )}
                     <p className="text-2xs text-text-muted">Harf, rakam, nokta (.), alt çizgi (_) ve tire (-) kullanılabilir. . _ - ile başlayıp bitemez.</p>
                     {/* Dizinde listeleme */}
-                    <div className="flex items-center justify-between pt-2 border-t border-surface-border">
-                      <div>
+                    <div className="flex items-center justify-between gap-4 pt-3 border-t border-surface-border">
+                      <div className="min-w-0">
                         <p className="text-xs font-medium text-text-secondary">Kullanıcılar listesinde görün</p>
                         <p className="text-2xs text-text-muted mt-0.5">Diğer kullanıcılar seni kullanıcı listesinde görebilir</p>
                       </div>
@@ -537,14 +537,14 @@ export default function SettingsPage() {
                         type="button"
                         onClick={handleToggleListed}
                         className={cn(
-                          'relative w-10 h-5.5 rounded-full transition-colors shrink-0',
+                          'relative rounded-full transition-colors shrink-0',
                           isListed ? 'bg-brand' : 'bg-surface-active'
                         )}
-                        style={{ minWidth: 40, height: 22 }}
+                        style={{ minWidth: 44, width: 44, height: 24 }}
                       >
                         <span className={cn(
-                          'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform',
-                          isListed ? 'translate-x-5' : 'translate-x-0.5'
+                          'absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform',
+                          isListed ? 'translate-x-6' : 'translate-x-1'
                         )} />
                       </button>
                     </div>

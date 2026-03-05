@@ -429,12 +429,11 @@ export async function getPostsByUser(uid: string, limitCount = 20): Promise<Post
   const snap = await getDocs(
     query(collection(db, 'posts'),
       where('authorId', '==', uid),
-      where('status', '==', 'published'),
       orderBy('createdAt', 'desc'),
-      limit(limitCount)
+      limit(limitCount * 3)
     )
   )
-  return snap.docs.map(postFromDoc)
+  return snap.docs.map(postFromDoc).filter(p => p.status === 'published').slice(0, limitCount)
 }
 
 export async function getUserStats(uid: string): Promise<{ postCount: number; commentCount: number }> {
@@ -481,15 +480,15 @@ export async function setUsername(uid: string, username: string, currentUsername
 }
 
 export async function getArchivedPosts(uid: string): Promise<Post[]> {
+  // composite index gerektirmemek için status filtresi client'ta yapılıyor
   const snap = await getDocs(
     query(collection(db, 'posts'),
       where('authorId', '==', uid),
-      where('status', '==', 'archived'),
-      orderBy('updatedAt', 'desc'),
-      limit(50)
+      orderBy('createdAt', 'desc'),
+      limit(200)
     )
   )
-  return snap.docs.map(postFromDoc)
+  return snap.docs.map(postFromDoc).filter(p => p.status === 'archived')
 }
 
 export async function restorePost(postId: string): Promise<void> {

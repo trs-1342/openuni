@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, ArrowRight, Lock, Mail, User, GraduationCap, AlertCircle, CheckCircle, Hash, ChevronLeft } from 'lucide-react'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { cn, isValidStudentEmail } from '@/lib/utils'
 import { registerUser, getAuthErrorMessage } from '@/lib/auth'
 import { validateUsername } from '@/lib/utils'
@@ -36,6 +37,7 @@ function PasswordStrength({ password }: { password: string }) {
 }
 
 export default function RegisterPage() {
+  useAuthGuard()
   const router = useRouter()
   const [form, setForm] = useState<FormState>({
     email: '', displayName: '', studentId: '', username: '', userType: '',

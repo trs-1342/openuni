@@ -4,10 +4,12 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, ArrowRight, Lock, Mail, AlertCircle } from 'lucide-react'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { cn } from '@/lib/utils'
 import { loginUser, getAuthErrorMessage } from '@/lib/auth'
 
 export default function LoginPage() {
+  useAuthGuard()
   const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail]       = useState('')
