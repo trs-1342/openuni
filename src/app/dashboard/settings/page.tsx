@@ -21,7 +21,7 @@ import {
   Save, CheckCircle, AlertCircle, Menu, Clock,
   Lock, Eye, EyeOff, Download, RefreshCw, ShieldCheck,
   ChevronRight, Info, BookOpen, FileText, ExternalLink,
-  Palette, Loader2, Camera, Trash2, ArrowUpRight,
+  Palette, Loader2, Camera, Trash2, Bell,
 } from 'lucide-react'
 import { cn, validateUsername } from '@/lib/utils'
 import {
@@ -302,7 +302,7 @@ export default function SettingsPage() {
   const { user: firebaseUser } = useAuthStore()
   const { profile, isLoading }  = useUserProfile()
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [activeTab, setActiveTab]   = useState<'profile' | 'security' | 'data' | 'appearance'>('profile')
+  const [activeTab, setActiveTab]   = useState<'profile' | 'security' | 'data' | 'appearance' | 'notifications'>('profile')
 
   const [displayName,  setDisplayName]  = useState('')
   const [userType,     setUserType]     = useState<UserType>('lisans')
@@ -317,6 +317,9 @@ export default function SettingsPage() {
   const [profileError, setProfileError] = useState('')
   const [studentId, setStudentId] = useState('')
   const [studentIdSaved, setStudentIdSaved] = useState(false)
+  const [emailPostNotify, setEmailPostNotify] = useState(false)
+  const [notifSaving, setNotifSaving] = useState(false)
+  const [notifSaved, setNotifSaved] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const { theme, setTheme } = useThemeStore()
   // Username
@@ -346,6 +349,7 @@ export default function SettingsPage() {
       setOriginalUsername(uname)
       setIsListed((profile as any).isListedInDirectory !== false)
       setStudentId((profile as any).studentId ?? '')
+      setEmailPostNotify((profile as any).emailPostNotify ?? false)
       setIsDirty(false)
     }
   }, [profile])
@@ -480,10 +484,11 @@ export default function SettingsPage() {
   const currentName = profile?.displayName ?? firebaseUser?.displayName ?? 'Kullanıcı'
 
   const tabs = [
-    { id: 'profile',    label: 'Profil',   icon: User },
-    { id: 'security',   label: 'Güvenlik', icon: Shield },
-    { id: 'appearance', label: 'Tema',      icon: Palette },
-    { id: 'data',       label: 'Verilerim', icon: Download },
+    { id: 'profile',       label: 'Profil',      icon: User },
+    { id: 'security',      label: 'Güvenlik',    icon: Shield },
+    { id: 'appearance',    label: 'Tema',         icon: Palette },
+    { id: 'notifications', label: 'Bildirimler',  icon: Bell },
+    { id: 'data',          label: 'Verilerim',    icon: Download },
   ] as const
 
   return (
@@ -997,8 +1002,6 @@ export default function SettingsPage() {
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {[
-                { href: 'https://obis.gelisim.edu.tr/', icon: ArrowUpRight,     label: 'OBİS',          desc: 'Obis sistemi' },
-                { href: 'https://lms.gelisim.edu.tr/', icon: ArrowUpRight,     label: 'LMS',          desc: 'Lms sistemi' },
                 { href: '/about',   icon: Info,     label: 'Hakkımızda',           desc: 'Platform hakkında bilgi' },
                 { href: '/guide',   icon: BookOpen, label: 'Kullanım Kılavuzu',    desc: 'Nasıl kullanılır?' },
                 { href: '/privacy', icon: Shield,   label: 'Gizlilik Politikası',  desc: 'KVKK ve veri güvenliği' },

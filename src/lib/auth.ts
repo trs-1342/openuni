@@ -94,9 +94,31 @@ export async function registerUser(data: RegisterData): Promise<User> {
       bookmarks:       [],
       isVerified:      false,
       teacherApproved: isTeacher ? false : null,
+      isAdminVerified: false,
       joinedAt:        serverTimestamp(),
       lastActiveAt:    serverTimestamp(),
     })
+    // Yeni kayıt admin log emaili — fire and forget
+    fetch('/api/send-admin-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret:  process.env.INTERNAL_API_SECRET,
+        subject: `Yeni Kayıt: ${data.displayName}`,
+        title:   '👤 Yeni Kullanıcı Kaydoldu',
+        level:   'info',
+        rows: [
+          { label: 'Ad Soyad',   value: data.displayName },
+          { label: 'E-posta',    value: data.email },
+          { label: 'Username',   value: data.username ?? '—' },
+          { label: 'Tür',        value: data.extra?.userType ?? 'lisans' },
+          { label: 'Fakülte',    value: data.extra?.fakulte ?? '—' },
+          { label: 'Bölüm',      value: data.department ?? '—' },
+          { label: 'Öğrenci No', value: data.extra?.studentId ?? '—' },
+        ],
+      }),
+    }).catch(() => {}) // email hatası kayıt akışını kesmez
+
     // Öğretmen ise onay kuyruğuna ekle
     if (isTeacher) {
       await setDoc(doc(db, 'teacherApprovals', user.uid), {
@@ -176,6 +198,7 @@ export async function ensureUserProfile(user: User) {
         role:                 user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? 'admin' : 'student',
         isVerified:           user.emailVerified,
         isListedInDirectory:  true,
+        isAdminVerified:      user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? true : false,
         bookmarks:            [],
         joinedAt:             st(),
         lastActiveAt:         st(),
@@ -190,6 +213,8 @@ export async function ensureUserProfile(user: User) {
       if (data.bookmarks            === undefined) updates.bookmarks            = []
       if (data.userType             === undefined) updates.userType             = 'lisans'
       if (!data.isVerified && user.emailVerified)  updates.isVerified           = true
+      // Admin emaili her zaman onaylı olsun
+      if (user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && !data.isAdminVerified) updates.isAdminVerified = true
       // role, studentId, fakulte, department, grade — mevcut değerlere HİÇBİR KOŞULDA dokunma
       const { updateDoc } = await import('firebase/firestore')
       await updateDoc(ref, updates)

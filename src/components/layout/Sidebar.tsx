@@ -707,7 +707,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           </Link>
 
           <div className="flex items-center gap-2.5 px-2 py-2 rounded hover:bg-surface transition-colors">
-            <Avatar name={displayName} size="sm" />
+            <Avatar name={displayName} src={(profile as any)?.avatarUrl ?? undefined} size="sm" />
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-text-primary truncate">{displayName}</div>
               <div className="text-2xs text-text-muted truncate">{department || 'Öğrenci'}</div>

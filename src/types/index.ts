@@ -39,7 +39,8 @@ export interface Space {
 
 export interface SpaceMember {
   userId: string; spaceId: string; role: SpaceMemberRole
-  joinedAt: Date; notificationsEnabled: boolean
+  joinedAt: Date; notificationsEnabled: boolean; emailPostNotify?: boolean
+  isAdminVerified?: boolean   // Admin tarafından manuel onaylanan hesap
 }
 
 export type SpaceMemberRole = 'member' | 'moderator' | 'admin'

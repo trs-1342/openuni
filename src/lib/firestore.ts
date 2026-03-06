@@ -204,6 +204,7 @@ export async function createPost(data_input: {
   // Banned veya muted kullanıcı post atamaz
   if (userProfile?.isBanned) throw new Error('Hesabınız askıya alındığı için paylaşım yapamazsınız.')
   if (userProfile?.isMuted) throw new Error('Hesabınız susturulduğu için paylaşım yapamazsınız.')
+  if ((userProfile as any)?.isAdminVerified === false) throw new Error('Hesabınız henüz admin tarafından onaylanmadı. Onaylandıktan sonra paylaşım yapabilirsiniz.')
   // İçerik limitleri
   if (!data.title.trim()) throw new Error('Başlık boş olamaz.')
   if (data.title.length > 200) throw new Error('Başlık en fazla 200 karakter olabilir.')
@@ -256,6 +257,32 @@ export async function createPost(data_input: {
     )
     await updateDoc(spaceRef, { channels: updated })
   }
+
+  // Kullanıcıya post email bildirimi — emailPostNotify açıksa gönder (fire & forget)
+  try {
+    const authorSnap = await getDoc(doc(db, 'users', data.author.uid))
+    if (authorSnap.exists()) {
+      const u = authorSnap.data()
+      if (u.emailPostNotify === true && u.email) {
+        const channelName = (spaceSnap.exists()
+          ? (spaceSnap.data().channels ?? []).find((ch: any) => ch.id === data.channelId)?.name
+          : '') ?? ''
+        const spaceName = spaceSnap.exists() ? spaceSnap.data().name : ''
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openigu.vercel.app'
+        fetch(`${appUrl}/api/send-post-notify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            secret: process.env.INTERNAL_API_SECRET,
+            to: u.email, displayName: u.displayName,
+            postTitle: data.title, postContent: data.content,
+            postUrl: `${appUrl}/dashboard/spaces/${data.spaceId}/${data.channelId}/${ref.id}`,
+            channelName, spaceName,
+          }),
+        }).catch(() => {})
+      }
+    }
+  } catch { /* email hatası kritik değil */ }
 
   return ref.id
 }
@@ -373,6 +400,7 @@ export async function createComment(data_input: {
   let data = data_input
   if (userProfile?.isBanned) throw new Error('Hesabınız askıya alındığı için yorum yapamazsınız.')
   if (userProfile?.isMuted) throw new Error('Hesabınız susturulduğu için yorum yapamazsınız.')
+  if ((userProfile as any)?.isAdminVerified === false) throw new Error('Hesabınız henüz onaylanmadı.')
   if (!data.content.trim()) throw new Error('Yorum boş olamaz.')
   if (data.content.length > 5000) throw new Error('Yorum en fazla 5000 karakter olabilir.')
   // author.role'ü Firestore'dan fresh oku
@@ -588,6 +616,7 @@ export async function getListedUsers(limitCount = 100): Promise<User[]> {
     query(
       collection(db, 'users'),
       where('isListedInDirectory', '==', true),
+      where('isAdminVerified', '==', true),
       limit(limitCount)
     )
   )
@@ -636,7 +665,7 @@ export async function getUserProfile(uid: string): Promise<User | null> {
 
 export async function updateUserProfile(uid: string, data: Partial<User>): Promise<void> {
   // Kritik alanların kullanıcı tarafından değiştirilmesini engelle
-  const PROTECTED_FIELDS = ['role', 'isBanned', 'isMuted', 'banReason', 'muteReason', 'banUntil', 'muteUntil', 'uid', 'email']
+  const PROTECTED_FIELDS = ['role', 'isBanned', 'isMuted', 'banReason', 'muteReason', 'banUntil', 'muteUntil', 'uid', 'email', 'isAdminVerified']
   const safe = Object.fromEntries(
     Object.entries(data).filter(([key]) => !PROTECTED_FIELDS.includes(key))
   )
@@ -649,6 +678,14 @@ export async function banUser(targetUid: string, reason: string, until: Date | n
     isBanned: true, banReason: reason,
     banUntil: until ?? null,
   })
+}
+
+export async function adminVerifyUser(targetUid: string): Promise<void> {
+  await updateDoc(doc(db, 'users', targetUid), { isAdminVerified: true })
+}
+
+export async function adminUnverifyUser(targetUid: string): Promise<void> {
+  await updateDoc(doc(db, 'users', targetUid), { isAdminVerified: false })
 }
 
 export async function unbanUser(targetUid: string): Promise<void> {
