@@ -108,7 +108,6 @@ export async function registerUser(data: RegisterData): Promise<User> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        secret:  process.env.INTERNAL_API_SECRET,
         subject: `Yeni Kayıt: ${data.displayName}`,
         title:   '👤 Yeni Kullanıcı Kaydoldu',
         level:   'info',
