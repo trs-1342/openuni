@@ -20,7 +20,7 @@ export default function NewPostPage() {
   const [loading, setLoading] = useState(true)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const { user: firebaseUser } = useAuthStore()
-  const { profile } = useUserProfile()
+  const { profile, isLoading: profileLoading } = useUserProfile()
   const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? 'khalil.khattab@ogr.gelisim.edu.tr'
   const isAdmin = firebaseUser?.email === ADMIN_EMAIL || profile?.role === 'admin'
   const isMod   = profile?.role === 'moderator'
@@ -35,7 +35,7 @@ export default function NewPostPage() {
     })
   }, [params.spaceSlug, params.channelSlug])
 
-  if (loading) {
+  if (loading || profileLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <Loader2 className="w-6 h-6 text-brand animate-spin" />
@@ -46,6 +46,15 @@ export default function NewPostPage() {
   if (!space || !channel) return null
 
   // Duyuru kanalında sadece admin paylaşım yapabilir
+  // Profile yüklenene kadar duyuru kanalı için bekle
+  if (channel.type === 'announcement' && profileLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <Loader2 className="w-6 h-6 text-brand animate-spin" />
+      </div>
+    )
+  }
+
   if (channel.type === 'announcement' && !isAdmin && !isMod) {
     return (
       <div className="flex h-screen items-center justify-center bg-background flex-col gap-3 text-center px-4">

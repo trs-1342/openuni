@@ -108,7 +108,7 @@ function ModerationDialog({
 }
 
 // ─── Kullanıcı Satırı ─────────────────────────────────────────────────────────
-function UserRow({ user: u, onAction, currentUserEmail }: any) {
+function UserRow({ user: u, onAction, currentUserEmail, onResetUsername }: any) {
   const [open, setOpen] = useState(false)
   const isBanned = u.isBanned && (!u.banUntil || new Date(u.banUntil) > new Date())
   const isMuted  = u.isMuted  && (!u.muteUntil || new Date(u.muteUntil) > new Date())
@@ -118,7 +118,7 @@ function UserRow({ user: u, onAction, currentUserEmail }: any) {
     <div className="border border-surface-border rounded-xl overflow-hidden">
       {/* Ana satır */}
       <div className="flex items-center gap-3 p-3" onClick={() => setOpen((o: any) => !o)}>
-        <Avatar name={u.displayName} size="sm" className="shrink-0" />
+        <Avatar name={u.displayName} src={u.avatarUrl} size="sm" className="shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <p className="text-xs font-medium text-text-primary truncate">{u.displayName}</p>
@@ -177,6 +177,12 @@ function UserRow({ user: u, onAction, currentUserEmail }: any) {
                 </button>
             )}
           </div>
+            {onResetUsername && (
+              <button onClick={() => onResetUsername(u.uid)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-surface-border text-text-muted hover:bg-surface transition-all">
+                🔄 Username Sıfırla
+              </button>
+            )}
           {isBanned && u.banReason && (
             <p className="text-2xs text-text-muted bg-accent-red/5 border border-accent-red/10 rounded px-2 py-1.5">
               Engel gerekçesi: {u.banReason}
@@ -260,11 +266,24 @@ export default function AdminPage() {
     } finally { setIsLoading(false) }
   }
 
+    async function handleResetUsername(uid: string) {
+    try {
+      const { doc, updateDoc } = await import('firebase/firestore')
+      const { db } = await import('@/lib/firebase')
+      await updateDoc(doc(db, 'users', uid), { usernameChangesLeft: 2 })
+      loadUsers()
+    } catch (e: any) { alert(e?.message) }
+  }
+
   async function loadTeachers() {
     setTeachersLoading(true)
     try {
       const t = await getPendingTeachers()
       setPendingTeachers(t)
+    } catch (e: any) {
+      // Firestore rules henüz eklenmemiş olabilir
+      console.warn('[loadTeachers]', e?.code, e?.message)
+      setPendingTeachers([])
     } finally { setTeachersLoading(false) }
   }
 

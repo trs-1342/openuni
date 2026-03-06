@@ -11,6 +11,8 @@ import { useThemeStore, THEMES } from '@/store/themeStore'
 import type { Theme } from '@/store/themeStore'
 import { changePassword, logoutUser, downloadMyData, resendVerificationEmail } from '@/lib/auth'
 import { updateProfile, sendEmailVerification, reload } from 'firebase/auth'
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
+import { storage } from '@/lib/firebase'
 import { auth } from '@/lib/firebase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -19,7 +21,7 @@ import {
   Save, CheckCircle, AlertCircle, Menu, Clock,
   Lock, Eye, EyeOff, Download, RefreshCw, ShieldCheck,
   ChevronRight, Info, BookOpen, FileText, ExternalLink,
-  Palette, Loader2,
+  Palette, Loader2, Camera, Trash2,
 } from 'lucide-react'
 import { cn, validateUsername } from '@/lib/utils'
 import {
@@ -307,8 +309,10 @@ export default function SettingsPage() {
   const [fakulte,      setFakulte]      = useState('')
   const [department,   setDepartment]   = useState('')
   const [grade,        setGrade]        = useState('')
-  const [isDirty,      setIsDirty]      = useState(false)
-  const [isSaving,     setIsSaving]     = useState(false)
+  const [isDirty,        setIsDirty]        = useState(false)
+  const [isSaving,       setIsSaving]       = useState(false)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarProgress,  setAvatarProgress]  = useState(0)
   const [saved,        setSaved]        = useState(false)
   const [profileError, setProfileError] = useState('')
   const [isDownloading, setIsDownloading] = useState(false)
@@ -375,6 +379,53 @@ export default function SettingsPage() {
     const newVal = !isListed
     setIsListed(newVal)
     await updateUserProfile(firebaseUser.uid, { isListedInDirectory: newVal } as any)
+  }
+
+  async function handleAvatarUpload(file: File) {
+    if (!firebaseUser) return
+    if (!file.type.startsWith('image/')) { alert('Sadece resim dosyası yüklenebilir.'); return }
+    if (file.size > 3 * 1024 * 1024) { alert('Resim en fazla 3MB olabilir.'); return }
+    setAvatarUploading(true)
+    setAvatarProgress(0)
+    try {
+      const ext = file.name.split('.').pop() ?? 'jpg'
+      const storageRef = ref(storage, `avatars/${firebaseUser.uid}.${ext}`)
+      await new Promise<void>((resolve, reject) => {
+        const task = uploadBytesResumable(storageRef, file)
+        task.on('state_changed',
+          snap => setAvatarProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100)),
+          reject,
+          async () => {
+            const url = await getDownloadURL(task.snapshot.ref)
+            await updateUserProfile(firebaseUser.uid, { avatarUrl: url } as any)
+            await updateProfile(firebaseUser, { photoURL: url })
+            resolve()
+          }
+        )
+      })
+    } catch { alert('Fotoğraf yüklenemedi. Tekrar deneyin.') }
+    finally { setAvatarUploading(false); setAvatarProgress(0) }
+  }
+
+  async function handleAvatarDelete() {
+    if (!firebaseUser || !profile?.avatarUrl) return
+    if (!confirm('Profil fotoğrafını silmek istediğine emin misin?')) return
+    setAvatarUploading(true)
+    try {
+      // Storage'dan sil (path tahmin et, hata olursa devam et)
+      try {
+        const uid = firebaseUser.uid
+        const url = profile.avatarUrl
+        const pathMatch = url.match(/avatars%2F([^?]+)/)
+        if (pathMatch) {
+          const storageRef = ref(storage, `avatars/${decodeURIComponent(pathMatch[1])}`)
+          await deleteObject(storageRef)
+        }
+      } catch { /* storage dosyası yoksa devam et */ }
+      await updateUserProfile(firebaseUser.uid, { avatarUrl: null } as any)
+      await updateProfile(firebaseUser, { photoURL: null })
+    } catch { alert('Fotoğraf silinemedi.') }
+    finally { setAvatarUploading(false) }
   }
 
   async function handleSaveProfile(e: React.FormEvent) {
@@ -463,7 +514,25 @@ export default function SettingsPage() {
           <div className="card flex items-center gap-4">
             {isLoading
               ? <div className="w-12 h-12 rounded-full bg-surface animate-pulse shrink-0" />
-              : <Avatar name={currentName} size="lg" />
+              : (
+                <div className="relative shrink-0 group">
+                  <Avatar name={currentName} src={profile?.avatarUrl} size="lg" />
+                  {/* Upload overlay */}
+                  <label className="absolute inset-0 rounded-full flex items-center justify-center
+                    bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                    {avatarUploading
+                      ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      : <Camera className="w-4 h-4 text-white" />
+                    }
+                    <input type="file" accept="image/*" className="sr-only"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleAvatarUpload(f) }} />
+                  </label>
+                  {/* Progress ring */}
+                  {avatarUploading && avatarProgress > 0 && (
+                    <div className="absolute -inset-1 rounded-full border-2 border-brand/50" />
+                  )}
+                </div>
+              )
             }
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-text-primary">{currentName}</p>
@@ -504,6 +573,56 @@ export default function SettingsPage() {
             <section className="space-y-4">
               <div className="card">
                 <form onSubmit={handleSaveProfile} className="space-y-4">
+                  {/* Profil Fotoğrafı */}
+                  <div className="border border-surface-border rounded-xl p-4 space-y-3">
+                    <label className="block text-xs font-medium text-text-secondary">Profil Fotoğrafı</label>
+                    <div className="flex items-center gap-4">
+                      <div className="relative group shrink-0">
+                        <Avatar name={currentName} src={profile?.avatarUrl} size="xl" />
+                        <label className="absolute inset-0 rounded-full flex items-center justify-center
+                          bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                          {avatarUploading
+                            ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            : <Camera className="w-5 h-5 text-white" />
+                          }
+                          <input type="file" accept="image/*" className="sr-only"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) handleAvatarUpload(f) }} />
+                        </label>
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        {avatarUploading && (
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-2xs text-text-muted">
+                              <span>Yükleniyor...</span><span>{avatarProgress}%</span>
+                            </div>
+                            <div className="w-full h-1 bg-surface rounded-full overflow-hidden">
+                              <div className="h-full bg-brand rounded-full transition-all" style={{width:`${avatarProgress}%`}} />
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <label className={cn(
+                            'btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 cursor-pointer',
+                            avatarUploading && 'opacity-50 pointer-events-none'
+                          )}>
+                            <Camera className="w-3.5 h-3.5" />
+                            {profile?.avatarUrl ? 'Değiştir' : 'Fotoğraf Ekle'}
+                            <input type="file" accept="image/*" className="sr-only"
+                              onChange={e => { const f = e.target.files?.[0]; if (f) handleAvatarUpload(f) }} />
+                          </label>
+                          {profile?.avatarUrl && (
+                            <button type="button" onClick={handleAvatarDelete}
+                              disabled={avatarUploading}
+                              className="btn-ghost text-xs px-3 py-1.5 flex items-center gap-1.5 text-accent-red hover:text-accent-red hover:bg-accent-red/10 disabled:opacity-50">
+                              <Trash2 className="w-3.5 h-3.5" /> Sil
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-2xs text-text-muted">JPG, PNG veya WebP · Maks. 3 MB</p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1.5">Ad Soyad</label>
                     <div className="relative">

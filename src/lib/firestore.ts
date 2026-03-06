@@ -374,11 +374,12 @@ export async function updatePost(postId: string, data: {
 
 export async function deletePost(postId: string): Promise<void> {
   const postSnap = await getDoc(doc(db, 'posts', postId))
-  await updateDoc(doc(db, 'posts', postId), { status: 'rejected', updatedAt: serverTimestamp() })
   if (postSnap.exists()) {
     const { spaceId, channelId } = postSnap.data()
-    _decrementChannelPostCount(spaceId, channelId)
+    // Önce postCount'u azalt, sonra belgeyı kalıcı sil
+    await _decrementChannelPostCount(spaceId, channelId)
   }
+  await deleteDoc(doc(db, 'posts', postId))
 }
 
 export async function archivePost(postId: string): Promise<void> {
@@ -702,6 +703,89 @@ export async function updateSpace(spaceId: string, data: {
     updatedAt: serverTimestamp(),
   }
   await updateDoc(doc(db, 'spaces', spaceId), safe)
+}
+
+export async function updateChannel(
+  spaceId: string,
+  channelId: string,
+  data: { name?: string; description?: string; icon?: string; color?: string; warningText?: string }
+): Promise<void> {
+  const spaceRef = doc(db, 'spaces', spaceId)
+  const snap = await getDoc(spaceRef)
+  if (!snap.exists()) return
+  const channels = snap.data().channels ?? []
+  const updated = channels.map((ch: any) =>
+    ch.id === channelId
+      ? {
+          ...ch,
+          ...(data.name        && { name: data.name.trim() }),
+          ...(data.description !== undefined && { description: data.description.trim() }),
+          ...(data.icon        !== undefined && { icon: data.icon }),
+          ...(data.color       !== undefined && { color: data.color }),
+          ...(data.warningText !== undefined && { warningText: data.warningText }),
+        }
+      : ch
+  )
+  await updateDoc(spaceRef, { channels: updated, updatedAt: serverTimestamp() })
+}
+
+export async function addChannel(spaceId: string, data: {
+  name: string; description?: string; type: string
+  icon: string; color: string; warningText?: string
+}): Promise<void> {
+  const spaceRef = doc(db, 'spaces', spaceId)
+  const snap = await getDoc(spaceRef)
+  if (!snap.exists()) return
+  const slug = data.name.toLowerCase().trim()
+    .replace(/ğ/g,'g').replace(/ı/g,'i').replace(/ö/g,'o')
+    .replace(/ş/g,'s').replace(/ü/g,'u').replace(/ç/g,'c')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')
+  const newChannel = {
+    id: `${spaceId}-${slug}-${Date.now()}`,
+    spaceId,
+    name: data.name.trim(),
+    slug,
+    description: data.description?.trim() ?? '',
+    type: data.type,
+    icon: data.icon,
+    color: data.color,
+    warningText: data.warningText ?? '',
+    postCount: 0,
+    isReadOnly: data.type === 'announcement',
+    isPinned: false,
+    rules: [],
+    createdAt: new Date(),
+  }
+  const channels = [...(snap.data().channels ?? []), newChannel]
+  await updateDoc(spaceRef, { channels, updatedAt: serverTimestamp() })
+}
+
+export async function deleteChannel(spaceId: string, channelId: string): Promise<void> {
+  const spaceRef = doc(db, 'spaces', spaceId)
+  const snap = await getDoc(spaceRef)
+  if (!snap.exists()) return
+  const channels = (snap.data().channels ?? []).filter((ch: any) => ch.id !== channelId)
+  await updateDoc(spaceRef, { channels, updatedAt: serverTimestamp() })
+}
+
+export async function getChannelPostCount(channelId: string): Promise<number> {
+  const snap = await getDocs(query(
+    collection(db, 'posts'),
+    where('channelId', '==', channelId),
+    where('status', '==', 'published')
+  ))
+  return snap.size
+}
+
+export async function getAllDocumentPosts(limitCount = 50): Promise<Post[]> {
+  const snap = await getDocs(query(
+    collection(db, 'posts'),
+    where('channelType', '==', 'archive'),
+    where('status', '==', 'published'),
+    orderBy('createdAt', 'desc'),
+    limit(limitCount)
+  ))
+  return snap.docs.map(postFromDoc)
 }
 
 export async function createSpace(data: {

@@ -1,5 +1,6 @@
 // src/app/dashboard/spaces/[spaceSlug]/[channelSlug]/[postId]/page.tsx
 'use client'
+import { db } from '@/lib/firebase'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Lightbox } from '@/components/ui/Lightbox'
@@ -70,7 +71,7 @@ function renderContent(text: string): React.ReactNode[] {
 function parseInline(text: string): React.ReactNode[] {
   // Bold, italic, code, mention, URL'yi işle
   const parts: React.ReactNode[] = []
-  const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)|(@[\w\u00C0-\u017E]+(?:\s[\w\u00C0-\u017E]+)?)|(\bhttps?:\/\/[^\s]+)/g
+  const regex = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(`(.+?)`)|(@[\w._%+-]+)|(\bhttps?:\/\/[^\s]+)/g
   let last = 0; let m: RegExpExecArray | null; let i = 0
 
   while ((m = regex.exec(text)) !== null) {
@@ -166,6 +167,9 @@ function CommentItem({
   const [editText, setEditText] = useState(comment.content)
   const [isSaving, setIsSaving] = useState(false)
   const [deleted, setDeleted] = useState(false)
+  const [showViewers, setShowViewers] = useState(false)
+  const [viewerProfiles, setViewerProfiles] = useState<Array<{uid:string;displayName:string;username?:string;avatarUrl?:string}>>([])
+  const [viewersLoading, setViewersLoading] = useState(false)
   const [cmtMentionOpen, setCmtMentionOpen] = useState(false)
   const [cmtMentionPos,  setCmtMentionPos]  = useState(0)
   const [cmtMentionQ,    setCmtMentionQ]    = useState('')
@@ -209,7 +213,7 @@ function CommentItem({
 
   return (
     <div className={cn('flex gap-3 group', comment.parentId && 'ml-8 pl-3 border-l border-surface-border')}>
-      <Link href={`/dashboard/profile/${comment.author.username ?? comment.author.uid}`} className="shrink-0 mt-0.5"><Avatar name={comment.author.displayName} size="sm" className="hover:ring-2 hover:ring-brand/30 transition-all" /></Link>
+      <Link href={`/dashboard/profile/${comment.author.username ?? comment.author.uid}`} className="shrink-0 mt-0.5"><Avatar name={comment.author.displayName} src={comment.author.avatarUrl} size="sm" className="hover:ring-2 hover:ring-brand/30 transition-all" /></Link>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <Link href={`/dashboard/profile/${comment.author.username ?? comment.author.uid}`} className="text-xs font-medium text-text-primary hover:text-brand transition-colors">{comment.author.displayName}</Link>
@@ -221,9 +225,19 @@ function CommentItem({
           {comment.isEdited && <span className="text-2xs text-text-muted italic">(düzenlendi)</span>}
         </div>
 
-        {comment.replyToAuthor && (
-          <p className="text-2xs text-brand mb-1">↩ @{comment.replyToAuthor}</p>
-        )}
+        {comment.replyToAuthor && (() => {
+          const isUsername = /^[\w._%+-]+$/.test(comment.replyToAuthor)
+          return (
+            <p className="text-2xs text-brand mb-1">
+              ↩{' '}
+              {isUsername
+                ? <Link href={`/dashboard/profile/${comment.replyToAuthor}`}
+                    className="hover:underline">@{comment.replyToAuthor}</Link>
+                : <span>@{comment.replyToAuthor}</span>
+              }
+            </p>
+          )
+        })()}
 
         {editing ? (
           <div className="space-y-2">
@@ -340,13 +354,25 @@ export default function PostDetailPage() {
   useEffect(() => {
     async function load() {
       const [p, s] = await Promise.all([getPost(params.postId), getSpaceBySlug(params.spaceSlug)])
-      setPost(p); setSpace(s); setIsLoading(false)
+      setSpace(s); setIsLoading(false)
       if (p) {
+        setPost(p)
         setEditTitle(p.title); setEditContent(p.content)
-        incrementViewCount(params.postId, firebaseUser?.uid).catch(() => {})
+        // Gerçekçi view: sadece bir kez, kullanıcı başına
+        if (firebaseUser?.uid) {
+          incrementViewCount(params.postId, firebaseUser.uid).catch(() => {})
+        }
       }
     }
     load()
+
+    // viewCount anlık — post dokümanını dinle
+    const unsub = onSnapshot(doc(db, 'posts', params.postId), (snap) => {
+      if (snap.exists()) {
+        setPost(prev => prev ? { ...prev, viewCount: snap.data().viewCount ?? 0, viewedBy: snap.data().viewedBy ?? [] } : prev)
+      }
+    })
+    return () => unsub()
   }, [params.postId, params.spaceSlug])
 
   useEffect(() => {
@@ -365,10 +391,14 @@ export default function PostDetailPage() {
 
   async function handleSubmitComment() {
     if (!commentText.trim() || isSubmitting || isMuted || isBanned) return
-    const content = replyTo
-      ? `@${replyTo.author.displayName} ${commentText.trim()}`
-      : commentText.trim()
-    await addComment(content, replyTo?.id, replyTo?.author.displayName)
+    // İçeriğe @mention ekleme — replyToAuthor metadata olarak ayrı saklanıyor
+    // Gösterimde "↩ @username" zaten ayrı satırda çıkıyor
+    const content = commentText.trim()
+    // replyToAuthor: username varsa username, yoksa displayName (eski yorumlar için)
+    const replyToAuthor = replyTo
+      ? ((replyTo.author as any).username?.trim() || replyTo.author.displayName)
+      : undefined
+    await addComment(content, replyTo?.id, replyToAuthor)
     setCommentText('')
     setReplyTo(null)
   }
@@ -488,6 +518,47 @@ export default function PostDetailPage() {
 
   return (
     <>
+    {/* Görüntüleyenler Modalı */}
+    {showViewers && (isAdmin || isMod) && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+        onClick={() => setShowViewers(false)}>
+        <div className="bg-surface-card border border-surface-border rounded-2xl w-full max-w-sm max-h-[70vh] flex flex-col shadow-2xl"
+          onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border">
+            <p className="font-semibold text-text-primary text-sm flex items-center gap-2">
+              <Eye className="w-4 h-4 text-brand" />
+              Görüntüleyenler ({(post as any)?.viewedBy?.length ?? 0})
+            </p>
+            <button onClick={() => setShowViewers(false)}
+              className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="overflow-y-auto flex-1 p-3 space-y-2">
+            {viewersLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 text-brand animate-spin" />
+              </div>
+            ) : viewerProfiles.length === 0 ? (
+              <p className="text-center text-xs text-text-muted py-8">Henüz görüntüleyen yok</p>
+            ) : (
+              viewerProfiles.map(u => (
+                <Link key={u.uid} href={`/dashboard/profile/${u.username ?? u.uid}`}
+                  onClick={() => setShowViewers(false)}
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface transition-colors">
+                  <Avatar name={u.displayName} src={u.avatarUrl} size="sm" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-text-primary truncate">{u.displayName}</p>
+                    {u.username && <p className="text-2xs text-text-muted">@{u.username}</p>}
+                  </div>
+                </Link>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+
     {lightbox && (
       <Lightbox
         images={lightbox.images}
@@ -526,7 +597,7 @@ export default function PostDetailPage() {
             {/* Header */}
             <div className="flex items-start gap-3">
               <Link href={`/dashboard/profile/${post.author.username ?? post.author.uid}`} className="shrink-0 mt-0.5">
-                <Avatar name={post.author.displayName} size="md" className="hover:ring-2 hover:ring-brand/30 transition-all" />
+                <Avatar name={post.author.displayName} src={post.author.avatarUrl} size="md" className="hover:ring-2 hover:ring-brand/30 transition-all" />
               </Link>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -695,7 +766,31 @@ export default function PostDetailPage() {
                 onToggle={handlePostReaction}
               />
               <div className="flex items-center gap-3 text-2xs text-text-muted">
-                <span className="flex items-center gap-1"><Eye className="w-3 h-3" />{post.viewCount}</span>
+                <span
+                  className={cn("flex items-center gap-1", (isAdmin || isMod) && "cursor-pointer hover:text-brand transition-colors")}
+                  onClick={async () => {
+                    if (!isAdmin && !isMod) return
+                    setShowViewers(true)
+                    setViewersLoading(true)
+                    try {
+                      const viewedBy: string[] = (post as any).viewedBy ?? []
+                      if (viewedBy.length === 0) { setViewerProfiles([]); setViewersLoading(false); return }
+                      const { getDocs, query, collection, where } = await import('firebase/firestore')
+                      // Batch: max 10 per 'in' query
+                      const chunks: string[][] = []
+                      for (let i = 0; i < viewedBy.length; i += 10) chunks.push(viewedBy.slice(i, i+10))
+                      const results: any[] = []
+                      for (const chunk of chunks) {
+                        const snap = await getDocs(query(collection(db, 'users'), where('uid', 'in', chunk)))
+                        snap.docs.forEach(d => results.push({ uid: d.id, ...d.data() }))
+                      }
+                      setViewerProfiles(results)
+                    } finally { setViewersLoading(false) }
+                  }}
+                  title={(isAdmin || isMod) ? "Görüntüleyenleri gör" : undefined}
+                >
+                  <Eye className="w-3 h-3" />{post.viewCount}
+                </span>
                 <span className="flex items-center gap-1"><MessageSquare className="w-3 h-3" />{post.commentCount}</span>
               </div>
             </div>
@@ -743,12 +838,12 @@ export default function PostDetailPage() {
                 {replyTo && (
                   <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-surface border border-surface-border text-xs text-text-muted">
                     <Reply className="w-3 h-3 shrink-0" />
-                    <span className="flex-1 truncate">@{replyTo.author.displayName}'e yanıt veriyorsunuz</span>
+                    <span className="flex-1 truncate">@{replyTo.author.username ?? replyTo.author.displayName}'e yanıt veriyorsunuz</span>
                     <button onClick={() => setReplyTo(null)} className="shrink-0 hover:text-text-primary"><X className="w-3 h-3" /></button>
                   </div>
                 )}
                 <div className="flex gap-2 items-start">
-                  <Avatar name={profile?.displayName ?? 'Sen'} size="sm" className="shrink-0 mt-1" />
+                  <Avatar name={profile?.displayName ?? 'Sen'} src={profile?.avatarUrl} size="sm" className="shrink-0 mt-1" />
                   <div className="flex-1 space-y-2">
                     <div className="relative">
                       <textarea
