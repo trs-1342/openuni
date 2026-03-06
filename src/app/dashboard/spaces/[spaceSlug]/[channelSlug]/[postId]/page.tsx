@@ -168,9 +168,6 @@ function CommentItem({
   const [editText, setEditText] = useState(comment.content)
   const [isSaving, setIsSaving] = useState(false)
   const [deleted, setDeleted] = useState(false)
-  const [showViewers, setShowViewers] = useState(false)
-  const [viewerProfiles, setViewerProfiles] = useState<Array<{uid:string;displayName:string;username?:string;avatarUrl?:string}>>([])
-  const [viewersLoading, setViewersLoading] = useState(false)
   const [cmtMentionOpen, setCmtMentionOpen] = useState(false)
   const [cmtMentionPos,  setCmtMentionPos]  = useState(0)
   const [cmtMentionQ,    setCmtMentionQ]    = useState('')
@@ -341,8 +338,12 @@ export default function PostDetailPage() {
   const currentRole = profile?.role ?? 'student'
   const isAuthor    = post?.authorId === currentUid
   const isMod       = currentRole === 'moderator' || currentRole === 'admin'
+  const isAdmin     = firebaseUser?.email === (process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? '') || currentRole === 'admin'
   const canEdit     = isAuthor
   const canModerate = isMod
+  const [showViewers,    setShowViewers]    = useState(false)
+  const [viewerProfiles, setViewerProfiles] = useState<Array<{uid:string;displayName:string;username?:string;avatarUrl?:string}>>([])
+  const [viewersLoading, setViewersLoading] = useState(false)
 
   // ban/mute kontrolü
   const isMuted = profile?.isMuted && (!profile.muteUntil || new Date(profile.muteUntil) > new Date())
