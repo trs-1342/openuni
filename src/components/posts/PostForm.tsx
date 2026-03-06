@@ -162,7 +162,7 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
   const meta    = CHANNEL_META[channel.type]
   const upload  = useFileUpload(`posts/${spaceId || 'misc'}/${channel.id || 'misc'}`)
   const { user: firebaseUser } = useAuthStore()
-  const { profile } = useUserProfile()
+  const { profile, isLoading: profileLoading } = useUserProfile()
 
   const isBanned = (profile as any)?.isBanned && (!(profile as any)?.banUntil || new Date((profile as any).banUntil) > new Date())
   const isMuted  = (profile as any)?.isMuted  && (!(profile as any)?.muteUntil  || new Date((profile as any).muteUntil)  > new Date())
@@ -220,6 +220,7 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
     if (isBanned) { setErrors({ title: 'Hesabınız askıya alındı. Paylaşım yapamazsınız.' }); return }
     if (isMuted)  { setErrors({ title: 'Hesabınız geçici olarak susturuldu.' }); return }
 
+    if (profileLoading) return  // profile henüz yüklenmedi
     setIsSubmitting(true)
     try {
       // Yüklenen dosyaları Attachment formatına çevir
@@ -235,12 +236,12 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
       }))
 
       const author = {
-        uid: firebaseUser.uid,
+        uid:         firebaseUser.uid,
         displayName: profile?.displayName ?? firebaseUser.displayName ?? 'Kullanıcı',
-        username: (profile as any)?.username ?? null,
-        ...(profile?.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
-        role: profile?.role ?? 'student',
-      } as const
+        username:    (profile as any)?.username ?? null,
+        avatarUrl:   (profile as any)?.avatarUrl ?? null,
+        role:        (profile as any)?.role ?? 'student',
+      }
 
       // Poll oluştur
       let poll: Poll | undefined

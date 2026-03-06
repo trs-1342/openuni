@@ -11,7 +11,7 @@ export function AuthProvider({ children }: any) {
     const unsubscribe = subscribeToAuthState(async (user) => {
       setUser(user)
       setInitialized()
-      if (user?.emailVerified) {
+      if (user) {
         await ensureUserProfile(user)
       }
     })

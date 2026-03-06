@@ -183,12 +183,14 @@ export async function ensureUserProfile(user: User) {
     } else {
       // Mevcut profili güncelle — sadece eksik alanları ekle, mevcut verileri silme
       const data = snap.data()
+      // Sadece eksik alanları ekle — mevcut verilere (role, studentId, fakulte vb.) ASLA dokunma
       const updates: Record<string, any> = { lastActiveAt: st() }
       if (data.isListedInDirectory === undefined) updates.isListedInDirectory = true
-      if (data.usernameChangesLeft === undefined) updates.usernameChangesLeft = 2
-      if (data.bookmarks === undefined) updates.bookmarks = []
-      if (data.userType === undefined) updates.userType = 'lisans'
-      if (!data.isVerified && user.emailVerified) updates.isVerified = true
+      if (data.usernameChangesLeft  === undefined) updates.usernameChangesLeft  = 2
+      if (data.bookmarks            === undefined) updates.bookmarks            = []
+      if (data.userType             === undefined) updates.userType             = 'lisans'
+      if (!data.isVerified && user.emailVerified)  updates.isVerified           = true
+      // role, studentId, fakulte, department, grade — mevcut değerlere HİÇBİR KOŞULDA dokunma
       const { updateDoc } = await import('firebase/firestore')
       await updateDoc(ref, updates)
     }

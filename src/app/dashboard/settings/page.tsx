@@ -315,6 +315,8 @@ export default function SettingsPage() {
   const [avatarProgress,  setAvatarProgress]  = useState(0)
   const [saved,        setSaved]        = useState(false)
   const [profileError, setProfileError] = useState('')
+  const [studentId, setStudentId] = useState('')
+  const [studentIdSaved, setStudentIdSaved] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const { theme, setTheme } = useThemeStore()
   // Username
@@ -343,6 +345,7 @@ export default function SettingsPage() {
       setUsernameInput(uname)
       setOriginalUsername(uname)
       setIsListed((profile as any).isListedInDirectory !== false)
+      setStudentId((profile as any).studentId ?? '')
       setIsDirty(false)
     }
   }, [profile])
@@ -435,13 +438,18 @@ export default function SettingsPage() {
     setIsSaving(true)
     setProfileError('')
     try {
-      await updateUserProfile(firebaseUser.uid, {
+      const profileData: any = {
         displayName: displayName.trim(),
         userType,
         fakulte,
         department,
         grade: grade === 'hazirlik' ? 'hazirlik' : grade ? parseInt(grade) : null,
-      } as any)
+      }
+      // studentId: sadece Firestore'da boşsa ekle (dolu olana dokunma)
+      if (studentId.trim() && !(profile as any)?.studentId) {
+        profileData.studentId = studentId.trim()
+      }
+      await updateUserProfile(firebaseUser.uid, profileData)
       await updateProfile(firebaseUser, { displayName: displayName.trim() })
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -724,15 +732,31 @@ export default function SettingsPage() {
                   {/* Öğrenci No */}
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1.5">
-                      Öğrenci No <span className="text-text-muted font-normal">(değiştirilemez)</span>
+                      Öğrenci No{' '}
+                      {(profile as any)?.studentId
+                        ? <span className="text-text-muted font-normal">(değiştirilemez)</span>
+                        : <span className="text-accent-amber font-normal">(henüz eklenmedi)</span>
+                      }
                     </label>
                     <div className="relative">
                       <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                      <input type="text"
-                        value={(profile as any)?.studentId ?? '—'}
-                        disabled
-                        className="input pl-10 opacity-50 cursor-not-allowed bg-surface/50" />
+                      {(profile as any)?.studentId ? (
+                        <input type="text"
+                          value={(profile as any).studentId}
+                          disabled
+                          className="input pl-10 opacity-50 cursor-not-allowed bg-surface/50" />
+                      ) : (
+                        <input type="text"
+                          value={studentId}
+                          onChange={e => { setStudentId(e.target.value.replace(/\D/g, '')); setIsDirty(true) }}
+                          placeholder="Öğrenci numaranızı girin"
+                          maxLength={12}
+                          className="input pl-10" />
+                      )}
                     </div>
+                    {!(profile as any)?.studentId && studentId.length > 0 && studentId.length < 6 && (
+                      <p className="text-2xs text-accent-amber mt-1">En az 6 rakam olmalıdır.</p>
+                    )}
                   </div>
                   {/* Statü seçimi */}
                   <div>

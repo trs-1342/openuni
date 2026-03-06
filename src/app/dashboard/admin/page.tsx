@@ -21,7 +21,7 @@ import {
   ChevronDown, Clock, Filter, GraduationCap, Check, XCircle,
 } from 'lucide-react'
 
-const ADMIN_EMAIL = 'khalil.khattab@ogr.gelisim.edu.tr'
+const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? ''
 
 // ─── Ban/Mute Dialog ──────────────────────────────────────────────────────────
 function ModerationDialog({
@@ -108,11 +108,12 @@ function ModerationDialog({
 }
 
 // ─── Kullanıcı Satırı ─────────────────────────────────────────────────────────
-function UserRow({ user: u, onAction, currentUserEmail, onResetUsername }: any) {
+function UserRow({ user: u, onAction, currentUserUid, onResetUsername }: any) {
   const [open, setOpen] = useState(false)
   const isBanned = u.isBanned && (!u.banUntil || new Date(u.banUntil) > new Date())
   const isMuted  = u.isMuted  && (!u.muteUntil || new Date(u.muteUntil) > new Date())
-  const isSelf   = u.email === currentUserEmail || u.email === 'khalil.khattab@ogr.gelisim.edu.tr'
+  // isSelf: uid bazlı karşılaştırma — email veya hardcode asla kullanılmaz
+  const isSelf   = u.uid === currentUserUid || u.role === 'admin'
 
   return (
     <div className="border border-surface-border rounded-xl overflow-hidden">
@@ -519,7 +520,7 @@ export default function AdminPage() {
               {filteredUsers.length === 0
                 ? <div className="text-center py-8 text-text-muted text-sm">Sonuç bulunamadı.</div>
                 : filteredUsers.map((u: any) => (
-                    <UserRow key={u.uid} user={u} onAction={handleUserAction} currentUserEmail={firebaseUser?.email} />
+                    <UserRow key={u.uid} user={u} onAction={handleUserAction} currentUserUid={firebaseUser?.uid} onResetUsername={handleResetUsername} />
                   ))
               }
             </div>

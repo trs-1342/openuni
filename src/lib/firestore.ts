@@ -189,7 +189,7 @@ export function subscribeToPosts(
   )
 }
 
-export async function createPost(data: {
+export async function createPost(data_input: {
   channelId: string
   spaceId: string
   author: Post['author']
@@ -198,7 +198,9 @@ export async function createPost(data: {
   tags: string[]
   attachments: Post['attachments']
   isAnnouncement: boolean
+  poll?: Post['poll']
 }, userProfile?: { isBanned?: boolean; isMuted?: boolean }): Promise<string> {
+  let data = data_input
   // Banned veya muted kullanıcı post atamaz
   if (userProfile?.isBanned) throw new Error('Hesabınız askıya alındığı için paylaşım yapamazsınız.')
   if (userProfile?.isMuted) throw new Error('Hesabınız susturulduğu için paylaşım yapamazsınız.')
@@ -207,16 +209,41 @@ export async function createPost(data: {
   if (data.title.length > 200) throw new Error('Başlık en fazla 200 karakter olabilir.')
   if (data.content.length > 20000) throw new Error('İçerik çok uzun.')
   if (data.tags.length > 10) throw new Error('En fazla 10 etiket eklenebilir.')
-  const ref = await addDoc(collection(db, 'posts'), {
-    ...data,
-    authorId: data.author.uid,
-    isPinned: false,
-    status: 'published',
-    commentCount: 0,
-    viewCount: 0,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  })
+  // author.role'ü Firestore'dan fresh oku — post oluşturulurken stale profile'dan gelmesin
+  try {
+    const userSnap = await getDoc(doc(db, 'users', data.author.uid))
+    if (userSnap.exists()) {
+      const freshRole = userSnap.data().role
+      if (freshRole) data = { ...data, author: { ...data.author, role: freshRole } }
+    }
+  } catch { /* role fetch başarısız olursa mevcut değeri kullan */ }
+
+  // author'dan null/undefined alanları temizle (Firestore undefined kabul etmez)
+  const cleanAuthor: Record<string, any> = {}
+  Object.entries(data.author).forEach(([k, v]) => { if (v !== undefined) cleanAuthor[k] = v })
+
+  // data'dan undefined olan alanları temizle (özellikle poll olmadığında)
+  const postData: Record<string, any> = {
+    channelId:      data.channelId,
+    spaceId:        data.spaceId,
+    author:         cleanAuthor,
+    authorId:       data.author.uid,
+    title:          data.title,
+    content:        data.content,
+    tags:           data.tags,
+    attachments:    data.attachments,
+    isAnnouncement: data.isAnnouncement,
+    isPinned:       false,
+    status:         'published',
+    commentCount:   0,
+    viewCount:      0,
+    viewedBy:       [],
+    createdAt:      serverTimestamp(),
+    updatedAt:      serverTimestamp(),
+  }
+  if (data.poll) postData.poll = data.poll
+
+  const ref = await addDoc(collection(db, 'posts'), postData)
 
   // Space'deki channel postCount'u artır
   const spaceRef = doc(db, 'spaces', data.spaceId)
@@ -336,19 +363,34 @@ export function subscribeToComments(
   )
 }
 
-export async function createComment(data: {
+export async function createComment(data_input: {
   postId: string
   parentId?: string
   replyToAuthor?: string
   author: Comment['author']
   content: string
 }, userProfile?: { isBanned?: boolean; isMuted?: boolean }): Promise<string> {
+  let data = data_input
   if (userProfile?.isBanned) throw new Error('Hesabınız askıya alındığı için yorum yapamazsınız.')
   if (userProfile?.isMuted) throw new Error('Hesabınız susturulduğu için yorum yapamazsınız.')
   if (!data.content.trim()) throw new Error('Yorum boş olamaz.')
   if (data.content.length > 5000) throw new Error('Yorum en fazla 5000 karakter olabilir.')
+  // author.role'ü Firestore'dan fresh oku
+  try {
+    const userSnap = await getDoc(doc(db, 'users', data.author.uid))
+    if (userSnap.exists()) {
+      const freshRole = userSnap.data().role
+      if (freshRole) data = { ...data, author: { ...data.author, role: freshRole } }
+    }
+  } catch { /* mevcut değeri kullan */ }
+
+  // author'dan undefined alanları temizle
+  const cleanCommentAuthor: Record<string, any> = {}
+  Object.entries(data.author).forEach(([k, v]) => { if (v !== undefined) cleanCommentAuthor[k] = v })
+
   const ref = await addDoc(collection(db, 'comments'), {
     ...data,
+    author: cleanCommentAuthor,
     authorId: data.author.uid,
     isEdited: false,
     reactions: {},

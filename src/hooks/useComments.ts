@@ -35,8 +35,8 @@ export function useComments(postId: string) {
           uid:         firebaseUser.uid,
           displayName: profile?.displayName ?? firebaseUser.displayName ?? 'Kullanıcı',
           username:    (profile as any)?.username ?? '',
-          ...(profile?.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
-          role:        profile?.role ?? 'student',
+          avatarUrl:   (profile as any)?.avatarUrl ?? null,
+          role:        (profile as any)?.role ?? 'student',
         },
         content: content.trim(),
       })
