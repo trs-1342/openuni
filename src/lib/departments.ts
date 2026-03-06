@@ -1,9 +1,10 @@
 // src/lib/departments.ts
 // IGÜ bölüm hiyerarşisi
 
-export type UserType = 'lisans' | 'onlisans' | 'ogretmen' | 'diger'
+export type UserType = 'lisans' | 'onlisans' | 'ogretmen' | 'diger' | 'visitor'
 
 export const USER_TYPE_LABELS: Record<UserType, string> = {
+  visitor: 'Ziyaretçi',
   lisans:    '🎓 Lisans Öğrencisi',
   onlisans:  '📚 Ön Lisans Öğrencisi',
   ogretmen:  '👨‍🏫 Öğretmen / Akademisyen',

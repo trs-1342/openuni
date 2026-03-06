@@ -4,7 +4,7 @@ import { cn, getInitials } from '@/lib/utils'
 import Image from 'next/image'
 
 interface AvatarProps {
-  name: string
+  name?: string
   src?: string
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
   className?: string
@@ -19,7 +19,8 @@ const sizeMap = {
 }
 
 // Deterministic color from name
-function getAvatarColor(name: string): string {
+function getAvatarColor(name: string | undefined | null): string {
+  if (!name) return 'from-slate-500 to-slate-600'
   const colors = [
     'from-blue-500 to-blue-600',
     'from-purple-500 to-purple-600',

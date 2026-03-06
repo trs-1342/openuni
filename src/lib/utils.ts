@@ -127,7 +127,8 @@ export const CHANNEL_META: Record<
 }
 
 // ─── Avatar Initials ──────────────────────────────────────────────────────────
-export function getInitials(name: string): string {
+export function getInitials(name: string | undefined | null): string {
+  if (!name) return '?'
   return name
     .split(' ')
     .map((n) => n[0])

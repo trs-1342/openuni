@@ -42,6 +42,8 @@ export interface RegisterData {
     studentId?: string
     userType?: string
     fakulte?: string
+    visitorUniversity?: string
+    [key: string]: string | undefined
   }
 }
 
@@ -89,6 +91,8 @@ export async function registerUser(data: RegisterData): Promise<User> {
       studentId:       data.extra?.studentId ?? null,
       // Öğretmen onay bekliyor: userType geçici olarak 'pending_teacher'
       userType:        isTeacher ? 'pending_teacher' : (data.extra?.userType ?? 'lisans'),
+      ...(data.extra?.userType === 'visitor' && data.extra?.visitorUniversity
+        ? { visitorUniversity: data.extra.visitorUniversity } : {}),
       fakulte:         data.extra?.fakulte ?? null,
       role:            user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? 'admin' : 'student',
       bookmarks:       [],
