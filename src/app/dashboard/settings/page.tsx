@@ -21,7 +21,7 @@ import {
   Save, CheckCircle, AlertCircle, Menu, Clock,
   Lock, Eye, EyeOff, Download, RefreshCw, ShieldCheck,
   ChevronRight, Info, BookOpen, FileText, ExternalLink,
-  Palette, Loader2, Camera, Trash2,
+  Palette, Loader2, Camera, Trash2, ArrowUpRight,
 } from 'lucide-react'
 import { cn, validateUsername } from '@/lib/utils'
 import {
@@ -973,6 +973,8 @@ export default function SettingsPage() {
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {[
+                { href: 'https://obis.gelisim.edu.tr/', icon: ArrowUpRight,     label: 'OBİS',          desc: 'Obis sistemi' },
+                { href: 'https://lms.gelisim.edu.tr/', icon: ArrowUpRight,     label: 'LMS',          desc: 'Lms sistemi' },
                 { href: '/about',   icon: Info,     label: 'Hakkımızda',           desc: 'Platform hakkında bilgi' },
                 { href: '/guide',   icon: BookOpen, label: 'Kullanım Kılavuzu',    desc: 'Nasıl kullanılır?' },
                 { href: '/privacy', icon: Shield,   label: 'Gizlilik Politikası',  desc: 'KVKK ve veri güvenliği' },
