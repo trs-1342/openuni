@@ -3,10 +3,14 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
+import { useUserProfile } from '@/hooks/useUserProfile'
 
 export function AuthGuard({ children }: any) {
   const { user, isInitialized } = useAuthStore()
+  const { profile } = useUserProfile()
   const router = useRouter()
+  const isAdminVerified = (profile as any)?.isAdminVerified
+  const isPending = isAdminVerified === false
 
   useEffect(() => {
     if (!isInitialized) return
@@ -32,5 +36,33 @@ export function AuthGuard({ children }: any) {
   }
 
   if (!user || !user.emailVerified) return null
+
+  // Admin onayı bekleniyor
+  if (isPending) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="max-w-sm w-full text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-accent-amber/10 border border-accent-amber/20 flex items-center justify-center mx-auto text-2xl">⏳</div>
+          <div>
+            <h2 className="text-lg font-bold text-text-primary mb-1">Hesabın İnceleniyor</h2>
+            <p className="text-sm text-text-muted leading-relaxed">
+              Hesabın admin tarafından inceleniyor. Onaylandıktan sonra platforma erişebilirsin.
+            </p>
+          </div>
+          <div className="bg-surface border border-surface-border rounded-xl p-3 text-left space-y-1.5">
+            <p className="text-2xs text-text-muted">Giriş yapılan hesap:</p>
+            <p className="text-xs font-medium text-text-primary">{user.email}</p>
+          </div>
+          <button
+            onClick={async () => { const { logoutUser } = await import('@/lib/auth'); await logoutUser(); router.replace('/auth/login') }}
+            className="text-xs text-text-muted hover:text-accent-red transition-colors"
+          >
+            Çıkış Yap
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return <>{children}</>
 }

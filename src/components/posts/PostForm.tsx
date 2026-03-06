@@ -221,6 +221,10 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
     if (isMuted)  { setErrors({ title: 'Hesabınız geçici olarak susturuldu.' }); return }
 
     if (profileLoading) return  // profile henüz yüklenmedi
+    if ((profile as any)?.isAdminVerified === false) {
+      setErrors({ title: 'Hesabınız henüz admin tarafından onaylanmadı. Onaylandıktan sonra paylaşım yapabilirsiniz.' })
+      return
+    }
     setIsSubmitting(true)
     try {
       // Yüklenen dosyaları Attachment formatına çevir

@@ -938,6 +938,64 @@ export default function SettingsPage() {
             </section>
           )}
 
+          {activeTab === 'notifications' && (
+            <section className="space-y-4">
+              <div>
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Bell className="w-3.5 h-3.5" /> E-posta Bildirimleri
+                </h3>
+              </div>
+
+              {/* Paylaşım bildirimi toggle */}
+              <div className="border border-surface-border rounded-xl p-4 flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-text-primary mb-0.5">Paylaşım Bildirimi</p>
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    Bir paylaşım yaptığında e-posta ile bildirim al. Paylaşımın yayınlandığını onaylar.
+                  </p>
+                </div>
+                <div className="shrink-0 flex items-center gap-2 mt-0.5">
+                  {notifSaved && <CheckCircle className="w-3.5 h-3.5 text-accent-green" />}
+                  {notifSaving && <Loader2 className="w-3.5 h-3.5 text-brand animate-spin" />}
+                  <button
+                    type="button"
+                    disabled={notifSaving}
+                    onClick={async () => {
+                      const next = !emailPostNotify
+                      setEmailPostNotify(next)
+                      setNotifSaving(true)
+                      try {
+                        await updateUserProfile(firebaseUser!.uid, { emailPostNotify: next } as any)
+                        setNotifSaved(true)
+                        setTimeout(() => setNotifSaved(false), 2000)
+                      } catch {
+                        setEmailPostNotify(!next) // rollback
+                      } finally {
+                        setNotifSaving(false)
+                      }
+                    }}
+                    className={[
+                      'w-11 h-6 rounded-full transition-colors relative flex-shrink-0',
+                      emailPostNotify ? 'bg-brand' : 'bg-surface-border',
+                      notifSaving ? 'opacity-50 cursor-not-allowed' : '',
+                    ].join(' ')}
+                  >
+                    <span className={[
+                      'absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all',
+                      emailPostNotify ? 'left-6' : 'left-1',
+                    ].join(' ')} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Bildirim emaili */}
+              <div className="border border-surface-border rounded-xl p-4 bg-surface/30">
+                <p className="text-xs font-medium text-text-secondary mb-1">Bildirimler şu adrese gönderilir</p>
+                <p className="text-sm text-text-primary font-mono">{firebaseUser?.email}</p>
+              </div>
+            </section>
+          )}
+
           {activeTab === 'data' && (
             <section className="space-y-4">
               <div>
@@ -1002,14 +1060,18 @@ export default function SettingsPage() {
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {[
-                { href: '/about',   icon: Info,     label: 'Hakkımızda',           desc: 'Platform hakkında bilgi' },
-                { href: '/guide',   icon: BookOpen, label: 'Kullanım Kılavuzu',    desc: 'Nasıl kullanılır?' },
-                { href: '/privacy', icon: Shield,   label: 'Gizlilik Politikası',  desc: 'KVKK ve veri güvenliği' },
-                { href: '/contact', icon: Mail,     label: 'Bize Ulaşın',          desc: 'Şikayet ve geri bildirim' },
+                { href: 'https://obis.gelisim.edu.tr',   icon: GraduationCap, label: 'OBİS',                 desc: 'Öğrenci bilgi sistemi',      external: true },
+                { href: 'https://lms.gelisim.edu.tr',    icon: BookOpen,      label: 'LMS',                  desc: 'Ders yönetim sistemi',       external: true },
+                { href: '/about',   icon: Info,           label: 'Hakkımızda',           desc: 'Platform hakkında bilgi',    external: false },
+                { href: '/guide',   icon: BookOpen,       label: 'Kullanım Kılavuzu',    desc: 'Nasıl kullanılır?',          external: false },
+                { href: '/privacy', icon: Shield,         label: 'Gizlilik Politikası',  desc: 'KVKK ve veri güvenliği',     external: false },
+                { href: '/contact', icon: Mail,           label: 'Bize Ulaşın',          desc: 'Şikayet ve geri bildirim',   external: false },
               ].map(link => {
                 const Icon = link.icon
                 return (
                   <Link key={link.href} href={link.href}
+                    target={(link as any).external ? '_blank' : undefined}
+                    rel={(link as any).external ? 'noopener noreferrer' : undefined}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-surface-border hover:border-brand/40 hover:bg-surface transition-all group">
                     <div className="w-7 h-7 rounded-lg bg-surface flex items-center justify-center shrink-0 group-hover:bg-brand/10 transition-colors">
                       <Icon className="w-3.5 h-3.5 text-text-muted group-hover:text-brand transition-colors" />

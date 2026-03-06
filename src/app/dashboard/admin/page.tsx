@@ -11,6 +11,7 @@ import {
   getAllUsers, getAllPosts, hardDeletePost, deletePost,
   banUser, unbanUser, muteUser, unmuteUser, setUserRole,
   getPendingTeachers, approveTeacher, rejectTeacher,
+  adminVerifyUser, adminUnverifyUser,
 } from '@/lib/firestore'
 import { timeAgo, cn } from '@/lib/utils'
 import type { User, Post } from '@/types'
@@ -28,7 +29,7 @@ function ModerationDialog({
   user: target, action, onConfirm, onClose,
 }: {
   user: User
-  action: 'ban' | 'mute' | 'unban' | 'unmute'
+  action: 'ban' | 'mute' | 'unban' | 'unmute' | 'verify' | 'unverify'
   onConfirm: (reason: string, until: Date | null) => void
   onClose: () => void
 }) {
@@ -48,6 +49,7 @@ function ModerationDialog({
 
   const actionLabel = {
     ban: 'Engelle', mute: 'Sustur', unban: 'Engeli Kaldır', unmute: 'Susturmayı Kaldır',
+    verify: 'Onayla', unverify: 'Onayı Kaldır',
   }[action]
 
   const colorClass = isRemoving ? 'text-accent-green' : 'text-accent-red'
@@ -127,6 +129,8 @@ function UserRow({ user: u, onAction, currentUserUid, onResetUsername }: any) {
             {u.role === 'moderator' && <span className="text-2xs bg-accent-purple/10 text-accent-purple px-1.5 py-0.5 rounded-sm font-medium">Mod</span>}
             {isBanned && <span className="text-2xs bg-accent-red/10 text-accent-red px-1.5 py-0.5 rounded-sm font-medium">Engelli</span>}
             {isMuted  && <span className="text-2xs bg-accent-amber/10 text-accent-amber px-1.5 py-0.5 rounded-sm font-medium">Susturuldu</span>}
+            {u.isAdminVerified === false && <span className="text-2xs bg-accent-amber/15 text-accent-amber border border-accent-amber/30 px-1.5 py-0.5 rounded-sm font-medium">⏳ Onay Bekliyor</span>}
+            {u.isAdminVerified === true  && <span className="text-2xs bg-accent-green/10 text-accent-green px-1.5 py-0.5 rounded-sm font-medium">✓ Onaylı</span>}
           </div>
           <p className="text-2xs text-text-muted truncate">{u.email}</p>
         </div>
@@ -178,6 +182,17 @@ function UserRow({ user: u, onAction, currentUserUid, onResetUsername }: any) {
                 </button>
             )}
           </div>
+            {/* Admin onayı */}
+            {!isSelf && (u.isAdminVerified === false
+              ? <button onClick={() => onAction(u, 'verify')}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-accent-green/30 text-accent-green hover:bg-accent-green/10 transition-all">
+                  <CheckCircle className="w-3 h-3" />Onayla
+                </button>
+              : u.isAdminVerified === true && <button onClick={() => onAction(u, 'unverify')}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-surface-border text-text-muted hover:bg-surface transition-all">
+                  <ShieldOff className="w-3 h-3" />Onayı Kaldır
+                </button>
+            )}
             {onResetUsername && (
               <button onClick={() => onResetUsername(u.uid)}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-surface-border text-text-muted hover:bg-surface transition-all">
@@ -318,10 +333,12 @@ export default function AdminPage() {
     const { user: target, action } = dialog
     setDialog(null)
     try {
-      if (action === 'ban')    await banUser(target.uid, reason, until)
-      if (action === 'unban')  await unbanUser(target.uid)
-      if (action === 'mute')   await muteUser(target.uid, reason, until)
-      if (action === 'unmute') await unmuteUser(target.uid)
+      if (action === 'ban')      await banUser(target.uid, reason, until)
+      if (action === 'unban')    await unbanUser(target.uid)
+      if (action === 'mute')     await muteUser(target.uid, reason, until)
+      if (action === 'unmute')   await unmuteUser(target.uid)
+      if (action === 'verify')   await adminVerifyUser(target.uid)
+      if (action === 'unverify') await adminUnverifyUser(target.uid)
       showToast('İşlem başarılı ✓')
       await load()
     } catch { showToast('Hata oluştu', 'err') }
@@ -335,8 +352,19 @@ export default function AdminPage() {
     } catch { showToast('Hata oluştu', 'err') }
   }
 
-  function handleUserAction(u: User, action: 'ban' | 'mute' | 'unban' | 'unmute' | 'mod' | 'unmod') {
+  function handleUserAction(u: User, action: 'ban' | 'mute' | 'unban' | 'unmute' | 'mod' | 'unmod' | 'verify' | 'unverify') {
     if (action === 'mod' || action === 'unmod') { handleRoleAction(u, action); return }
+    if (action === 'verify' || action === 'unverify') {
+      ;(async () => {
+        try {
+          if (action === 'verify')   await adminVerifyUser(u.uid)
+          else                       await adminUnverifyUser(u.uid)
+          showToast(action === 'verify' ? `${u.displayName} onaylandı ✓` : `${u.displayName} onayı kaldırıldı`, action === 'verify' ? 'ok' : 'err')
+          load()
+        } catch { showToast('İşlem başarısız', 'err') }
+      })()
+      return
+    }
     setDialog({ user: u, action })
   }
 
@@ -516,7 +544,14 @@ export default function AdminPage() {
             <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-brand animate-spin" /></div>
           ) : tab === 'users' ? (
             <div className="space-y-2">
-              <p className="text-xs text-text-muted">{filteredUsers.length} kullanıcı</p>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-xs text-text-muted">{filteredUsers.length} kullanıcı</p>
+                {users.filter((u: any) => u.isAdminVerified === false).length > 0 && (
+                  <span className="text-2xs bg-accent-amber/15 text-accent-amber border border-accent-amber/30 px-2 py-0.5 rounded-full font-medium">
+                    {users.filter((u: any) => u.isAdminVerified === false).length} onay bekliyor
+                  </span>
+                )}
+              </div>
               {filteredUsers.length === 0
                 ? <div className="text-center py-8 text-text-muted text-sm">Sonuç bulunamadı.</div>
                 : filteredUsers.map((u: any) => (

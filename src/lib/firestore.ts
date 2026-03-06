@@ -269,11 +269,10 @@ export async function createPost(data_input: {
           : '') ?? ''
         const spaceName = spaceSnap.exists() ? spaceSnap.data().name : ''
         const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openigu.vercel.app'
-        fetch(`${appUrl}/api/send-post-notify`, {
+        fetch('/api/send-post-notify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            secret: process.env.INTERNAL_API_SECRET,
             to: u.email, displayName: u.displayName,
             postTitle: data.title, postContent: data.content,
             postUrl: `${appUrl}/dashboard/spaces/${data.spaceId}/${data.channelId}/${ref.id}`,
