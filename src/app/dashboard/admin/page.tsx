@@ -271,7 +271,7 @@ export default function AdminPage() {
       const { doc, updateDoc } = await import('firebase/firestore')
       const { db } = await import('@/lib/firebase')
       await updateDoc(doc(db, 'users', uid), { usernameChangesLeft: 2 })
-      loadUsers()
+      load()
     } catch (e: any) { alert(e?.message) }
   }
 
