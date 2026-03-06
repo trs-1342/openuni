@@ -50,7 +50,8 @@ export interface RegisterData {
 export async function registerUser(data: RegisterData): Promise<User> {
   // Email'i normalize et (büyük harf bypass engeli)
   data.email = data.email.trim().toLowerCase()
-  if (!isValidStudentEmail(data.email)) {
+  const isVisitor = data.extra?.userType === 'visitor'
+  if (!isVisitor && !isValidStudentEmail(data.email)) {
     throw new Error('Yalnızca @ogr.gelisim.edu.tr uzantılı e-posta kabul edilir.')
   }
 
@@ -215,11 +216,13 @@ export async function ensureUserProfile(user: User) {
       if (data.isListedInDirectory === undefined) updates.isListedInDirectory = true
       if (data.usernameChangesLeft  === undefined) updates.usernameChangesLeft  = 2
       if (data.bookmarks            === undefined) updates.bookmarks            = []
-      if (data.userType             === undefined) updates.userType             = 'lisans'
-      if (!data.isVerified && user.emailVerified)  updates.isVerified           = true
+      // userType — sadece hiç yazılmamışsa varsayılan ata, MEVCUT DEĞERİ ASLA EZME
+      if (!data.userType) updates.userType = 'lisans'
+      if (!data.isVerified && user.emailVerified) updates.isVerified = true
       // Admin emaili her zaman onaylı olsun
       if (user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && !data.isAdminVerified) updates.isAdminVerified = true
-      // role, studentId, fakulte, department, grade — mevcut değerlere HİÇBİR KOŞULDA dokunma
+      // Aşağıdaki alanlar — mevcut değerlere HİÇBİR KOŞULDA dokunma:
+      // role, studentId, fakulte, department, grade, displayName, username, visitorUniversity
       const { updateDoc } = await import('firebase/firestore')
       await updateDoc(ref, updates)
     }

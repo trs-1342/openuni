@@ -445,10 +445,11 @@ export default function SettingsPage() {
       const profileData: any = {
         displayName: displayName.trim(),
         userType,
-        fakulte,
-        department,
         grade: grade === 'hazirlik' ? 'hazirlik' : grade ? parseInt(grade) : null,
       }
+      // Boş string ile mevcut veriyi ezme — sadece değer varsa yaz
+      if (fakulte)    profileData.fakulte    = fakulte
+      if (department) profileData.department = department
       // studentId: sadece Firestore'da boşsa ekle (dolu olana dokunma)
       if (studentId.trim() && !(profile as any)?.studentId) {
         profileData.studentId = studentId.trim()
