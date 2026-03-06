@@ -43,7 +43,7 @@ export function Avatar({ name, src, size = 'md', className }: AvatarProps) {
   return (
     <div className={cn('relative shrink-0 rounded-full overflow-hidden', sizeMap[size], className)}>
       {src ? (
-        <Image src={src} alt={name} fill className="object-cover" />
+        <Image src={src} alt={name ?? ""} fill className="object-cover" />
       ) : (
         <div className={cn('w-full h-full flex items-center justify-center bg-gradient-to-br font-semibold text-white select-none', colorGradient)}>
           {initials}
