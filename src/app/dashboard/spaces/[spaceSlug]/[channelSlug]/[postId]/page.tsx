@@ -22,6 +22,7 @@ import {
   getListedUsers,
 } from '@/lib/firestore'
 import { timeAgo, formatFileSize, CHANNEL_META, cn } from '@/lib/utils'
+import { PollWidget } from '@/components/posts/PollWidget'
 import type { Post, Space, Comment } from '@/types'
 import {
   ChevronRight, Eye, MessageSquare, Paperclip, FileText,
@@ -717,6 +718,21 @@ export default function PostDetailPage() {
                 )}
 
                 {/* Ekler */}
+                {/* Poll */}
+                {(post as any).poll && (
+                  <PollWidget
+                    postId={post.id}
+                    poll={(post as any).poll}
+                    currentUid={currentUid}
+                    isAuthor={isAuthor}
+                    onUpdate={async () => {
+                      const { getPost } = await import('@/lib/firestore')
+                      const p = await getPost(post.id)
+                      if (p) setPost(p)
+                    }}
+                  />
+                )}
+
                 {post.attachments.length > 0 && (
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-text-muted flex items-center gap-1.5">

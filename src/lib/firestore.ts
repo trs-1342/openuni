@@ -32,7 +32,7 @@ function fromTimestamp(ts: any): Date {
 
 function postFromDoc(doc: any): Post {
   const d = doc.data()
-  return {
+  const post: any = {
     ...d,
     id: doc.id,
     createdAt: fromTimestamp(d.createdAt),
@@ -41,7 +41,13 @@ function postFromDoc(doc: any): Post {
       ...a,
       uploadedAt: fromTimestamp(a.uploadedAt),
     })),
-  } as Post
+  }
+  if (post.poll?.endsAt?.toDate) {
+    post.poll = { ...post.poll, endsAt: post.poll.endsAt.toDate() }
+  } else if (post.poll?.endsAt && typeof post.poll.endsAt === 'object' && 'seconds' in post.poll.endsAt) {
+    post.poll = { ...post.poll, endsAt: new Date(post.poll.endsAt.seconds * 1000) }
+  }
+  return post as Post
 }
 
 function notifFromDoc(doc: any): Notification {
@@ -668,6 +674,49 @@ export async function getAllUsers(): Promise<User[]> {
 export async function getAllPosts(): Promise<Post[]> {
   const snap = await getDocs(query(collection(db, 'posts'), limit(200)))
   return snap.docs.map(postFromDoc)
+}
+
+// ─── POLL ─────────────────────────────────────────────────────────────────────
+export async function votePoll(postId: string, optionIds: string[], uid: string): Promise<void> {
+  const postRef = doc(db, 'posts', postId)
+  const snap = await getDoc(postRef)
+  if (!snap.exists()) return
+  const poll = snap.data().poll
+  if (!poll) return
+
+  // Süre dolduysa oy kullanılamaz
+  if (poll.endsAt && new Date(poll.endsAt.seconds ? poll.endsAt.seconds * 1000 : poll.endsAt) < new Date()) return
+
+  // Mevcut oyları temizle (çoklu değilse hepsini, çoklu ise de hepsini sıfırla ve yeniden ekle)
+  const updatedOptions = poll.options.map((opt: any) => ({
+    ...opt,
+    votes: opt.votes.filter((v: string) => v !== uid),
+  }))
+  // Seçilen seçeneklere uid ekle
+  optionIds.forEach(id => {
+    const idx = updatedOptions.findIndex((o: any) => o.id === id)
+    if (idx !== -1 && !updatedOptions[idx].votes.includes(uid)) {
+      updatedOptions[idx].votes.push(uid)
+    }
+  })
+  await updateDoc(postRef, { 'poll.options': updatedOptions })
+}
+
+export async function retractVote(postId: string, uid: string): Promise<void> {
+  const postRef = doc(db, 'posts', postId)
+  const snap = await getDoc(postRef)
+  if (!snap.exists()) return
+  const poll = snap.data().poll
+  if (!poll) return
+  const updatedOptions = poll.options.map((opt: any) => ({
+    ...opt,
+    votes: opt.votes.filter((v: string) => v !== uid),
+  }))
+  await updateDoc(postRef, { 'poll.options': updatedOptions })
+}
+
+export async function endPoll(postId: string): Promise<void> {
+  await updateDoc(doc(db, 'posts', postId), { 'poll.isEnded': true })
 }
 
 export async function hardDeletePost(postId: string): Promise<void> {

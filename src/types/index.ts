@@ -55,6 +55,22 @@ export type ChannelType = 'announcement' | 'academic' | 'archive' | 'listing' | 
 export type ChannelColor = 'amber' | 'green' | 'purple' | 'blue' | 'red' | 'teal'
 export interface ChannelRule { id: string; text: string }
 
+
+export interface PollOption {
+  id: string
+  text: string
+  votes: string[]   // uid listesi
+}
+
+export interface Poll {
+  question: string
+  options: PollOption[]
+  allowMultiple: boolean          // çoklu seçim
+  endsAt: Date | null             // null = süresiz
+  showResultsAfterEnd: boolean    // true = sadece bitiş sonrası göster
+  isEnded: boolean
+}
+
 export interface Post {
   id: string; channelId: string; spaceId: string
   authorId: string; author: Pick<User, 'uid' | 'displayName' | 'avatarUrl' | 'role' | 'username'>
@@ -62,6 +78,7 @@ export interface Post {
   tags: string[]; isPinned: boolean; isAnnouncement: boolean
   status: PostStatus; commentCount: number; viewCount: number
   reactions?: Record<string, string[]>
+  poll?: Poll
   isEdited?: boolean; editedAt?: Date
   createdAt: Date; updatedAt: Date
 }

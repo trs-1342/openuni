@@ -7,11 +7,15 @@ import { Avatar } from '@/components/ui/Avatar'
 import { ChannelBadge, RoleBadge } from '@/components/ui/Badge'
 import type { Post } from '@/types'
 import { MessageSquare, Eye, Pin, Paperclip, FileText, ChevronRight, Download, ImageIcon, File } from 'lucide-react'
+import { PollWidget } from '@/components/posts/PollWidget'
+import { useAuthStore } from '@/store/authStore'
 
 type PostCardProps = { post: any; spaceSlug?: any; channelSlug?: any; variant?: any; [key: string]: any }
 
 export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: PostCardProps) {
   const router = useRouter()
+  const { user: firebaseUser } = useAuthStore()
+  const currentUid = firebaseUser?.uid ?? ''
   const href = `/dashboard/spaces/${spaceSlug}/${channelSlug}/${post.id}`
   const channelMeta = CHANNEL_META[post.isAnnouncement ? 'announcement' : 'academic']
 
@@ -62,6 +66,16 @@ export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: 
             )}
 
             {/* Tags */}
+            {(post as any).poll && variant === 'default' && (
+              <PollWidget
+                postId={post.id}
+                poll={(post as any).poll}
+                currentUid={currentUid}
+                isAuthor={post.authorId === currentUid}
+                compact
+              />
+            )}
+
             {post.tags.length > 0 && variant === 'default' && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {post.tags.map((tag: any) => (

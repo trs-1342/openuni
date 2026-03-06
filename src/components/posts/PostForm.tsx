@@ -9,12 +9,13 @@ import { useFileUpload } from '@/hooks/useFileUpload'
 import { useAuthStore } from '@/store/authStore'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { createPost } from '@/lib/firestore'
-import type { Channel, ChannelType, Attachment } from '@/types'
+import type { Channel, ChannelType, Attachment, Poll } from '@/types'
 import { getListedUsers } from '@/lib/firestore'
 import type { User } from '@/types'
 import {
   AlertCircle, ArrowLeft, CheckCircle, ChevronDown,
   Eye, Loader2, Lock, Send, Info,
+  BarChart2, Plus, Trash2, X as XIcon,
 } from 'lucide-react'
 
 // ─── Channel tiplerine göre form alanları ─────────────────────────────────────
@@ -172,6 +173,13 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
   const [showPreview, setShowPreview]   = useState(false)
   const [submitted, setSubmitted]       = useState(false)
 
+  // Poll state
+  const [hasPoll, setHasPoll]           = useState(false)
+  const [pollOptions, setPollOptions]   = useState(['', ''])
+  const [pollMultiple, setPollMultiple] = useState(false)
+  const [pollEndsAt, setPollEndsAt]     = useState('')
+  const [pollShowAfter, setPollShowAfter] = useState(false)
+
   // Mention sistemi
   const [allUsers, setAllUsers]           = useState<User[]>([])
   const [mentionQuery, setMentionQuery]   = useState('')
@@ -234,6 +242,21 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
         role: profile?.role ?? 'student',
       } as const
 
+      // Poll oluştur
+      let poll: Poll | undefined
+      if (hasPoll) {
+        const validOptions = pollOptions.filter((o: string) => o.trim())
+        if (validOptions.length < 2) throw new Error('En az 2 anket seçeneği gerekli.')
+        poll = {
+          question: values.title,
+          options: validOptions.map((text: string, i: number) => ({ id: `opt-${i}-${Date.now()}`, text: text.trim(), votes: [] })),
+          allowMultiple: pollMultiple,
+          endsAt: pollEndsAt ? new Date(pollEndsAt) : null,
+          showResultsAfterEnd: pollShowAfter,
+          isEnded: false,
+        }
+      }
+
       const resolvedSpaceId = spaceId || channel.spaceId || ''
       if (!resolvedSpaceId) {
         throw new Error('Space ID bulunamadı. Sayfayı yenileyip tekrar deneyin.')
@@ -248,6 +271,7 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
         tags: values.tags,
         attachments,
         isAnnouncement: channel.type === 'announcement',
+        ...(poll ? { poll } : {}),
       }, profile ?? undefined)
 
       setSubmitted(true)
@@ -435,6 +459,97 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
             />
           </div>
         )}
+
+        {/* Anket */}
+        <div className="border border-surface-border rounded-xl overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setHasPoll((p: boolean) => !p)}
+            className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface transition-colors"
+          >
+            <span className="flex items-center gap-2 text-sm font-medium text-text-secondary">
+              <BarChart2 className="w-4 h-4 text-brand" />
+              Anket Ekle
+            </span>
+            <span className={`text-2xs px-2 py-0.5 rounded-full transition-colors ${hasPoll ? 'bg-brand/20 text-brand' : 'bg-surface text-text-muted'}`}>
+              {hasPoll ? 'Açık' : 'Kapalı'}
+            </span>
+          </button>
+
+          {hasPoll && (
+            <div className="px-4 pb-4 space-y-3 border-t border-surface-border bg-surface/30">
+              {/* Seçenekler */}
+              <div className="space-y-2 pt-3">
+                <label className="text-xs font-medium text-text-secondary">Seçenekler</label>
+                {pollOptions.map((opt, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-brand/20 text-brand text-2xs flex items-center justify-center shrink-0 font-semibold">{i + 1}</span>
+                    <input
+                      value={opt}
+                      onChange={e => { const n = [...pollOptions]; n[i] = e.target.value; setPollOptions(n) }}
+                      className="input text-sm py-1.5 flex-1"
+                      placeholder={`Seçenek ${i + 1}`}
+                      maxLength={120}
+                    />
+                    {pollOptions.length > 2 && (
+                      <button type="button" onClick={() => setPollOptions(p => p.filter((_, j) => j !== i))}
+                        className="p-1.5 text-text-muted hover:text-accent-red transition-colors shrink-0">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {pollOptions.length < 10 && (
+                  <button type="button" onClick={() => setPollOptions(p => [...p, ''])}
+                    className="flex items-center gap-1.5 text-xs text-brand hover:text-brand-hover transition-colors mt-1">
+                    <Plus className="w-3.5 h-3.5" /> Seçenek ekle
+                  </button>
+                )}
+              </div>
+
+              {/* Ayarlar */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {/* Çoklu seçim */}
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <div onClick={() => setPollMultiple(p => !p)}
+                    className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 ${pollMultiple ? 'bg-brand' : 'bg-surface-border'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${pollMultiple ? 'left-4' : 'left-0.5'}`} />
+                  </div>
+                  <span className="text-xs text-text-secondary">Çoklu seçim</span>
+                </label>
+
+                {/* Sonuçları sadece bitiş sonrası göster */}
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <div onClick={() => setPollShowAfter(p => !p)}
+                    className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 ${pollShowAfter ? 'bg-brand' : 'bg-surface-border'}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${pollShowAfter ? 'left-4' : 'left-0.5'}`} />
+                  </div>
+                  <span className="text-xs text-text-secondary">Sonuçları bitiş sonrası göster</span>
+                </label>
+              </div>
+
+              {/* Bitiş tarihi */}
+              <div>
+                <label className="text-xs font-medium text-text-secondary mb-1.5 block">
+                  Bitiş Tarihi <span className="font-normal text-text-muted">(boş bırakılırsa süresiz)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={pollEndsAt}
+                  onChange={e => setPollEndsAt(e.target.value)}
+                  className="input text-sm py-1.5"
+                  min={new Date().toISOString().slice(0, 16)}
+                />
+                {pollEndsAt && (
+                  <button type="button" onClick={() => setPollEndsAt('')}
+                    className="mt-1 text-2xs text-text-muted hover:text-accent-red flex items-center gap-1 transition-colors">
+                    <XIcon className="w-3 h-3" /> Tarihi kaldır
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Preview */}
         {showPreview && (

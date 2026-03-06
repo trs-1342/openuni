@@ -63,7 +63,7 @@ export default function DocumentsPage() {
       setPosts(withAttachments)
 
       // Benzersiz spaceId'leri topla ve Space'leri çek
-      const uniqueSpaceIds = [...new Set(withAttachments.map(p => p.spaceId).filter(Boolean))]
+      const uniqueSpaceIds = Array.from(new Set<string>(withAttachments.map(p => p.spaceId).filter(Boolean)))
       if (uniqueSpaceIds.length > 0) {
         const spaces = await Promise.all(uniqueSpaceIds.map(id => getSpace(id)))
         const map: Record<string, Space> = {}

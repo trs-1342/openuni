@@ -530,7 +530,9 @@ function SpaceSection({ space, isActive, onNavigate }: any) {
                   'bg-text-muted':    channel.type === 'suggestion',
                 })} />
                 <span className="flex-1 truncate">{meta.icon} {channel.name}</span>
-{/* postCount Firestore'dan realtime gelince tekrar eklenecek */}
+{channel.postCount > 0 && (
+                  <span className="text-2xs text-text-muted tabular-nums">{channel.postCount}</span>
+                )}
               </Link>
             )
           })}
@@ -578,6 +580,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const topItems = [
     { label: 'Ana Sayfa',     href: '/dashboard',              icon: Home },
     { label: 'Bildirimler',   href: '/dashboard/notifications', icon: Bell,     badge: unreadCount },
+    { label: 'Belgeler',       href: '/dashboard/documents', icon: FileText,   badge: 0 },
     { label: 'Üyeler',        href: '/dashboard/members',       icon: Users },
   { label: 'Kaydedilenler', href: '/dashboard/bookmarks',     icon: Bookmark },
   { label: 'Arşivlenenler',  href: '/dashboard/archived',      icon: Archive },
