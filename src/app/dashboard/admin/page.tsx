@@ -260,7 +260,7 @@ export default function AdminPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [toast,      setToast]      = useState<{ msg: string; type: 'ok' | 'err' } | null>(null)
   const [dialog, setDialog] = useState<{
-    user: User; action: 'ban' | 'mute' | 'unban' | 'unmute'
+    user: User; action: 'ban' | 'mute' | 'unban' | 'unmute' | 'verify' | 'unverify'
   } | null>(null)
   const [roleFilter,  setRoleFilter]  = useState<'all' | 'student' | 'moderator' | 'banned' | 'muted'>('all')
   const [typeFilter,  setTypeFilter]  = useState<'all' | 'lisans' | 'onlisans' | 'ogretmen' | 'pending_teacher' | 'diger'>('all')

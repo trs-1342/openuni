@@ -25,8 +25,8 @@ function emailWrapper(title: string, body: string): string {
       <table width="560" cellpadding="0" cellspacing="0" style="background:#131929;border-radius:16px;border:1px solid #1E2535;overflow:hidden;max-width:560px;">
         <tr><td style="padding:24px 28px;border-bottom:1px solid #1E2535;">
           <table cellpadding="0" cellspacing="0"><tr>
-            <td style="width:32px;height:32px;background:#4F7EF7;border-radius:8px;text-align:center;vertical-align:middle;">
-              <span style="color:white;font-weight:700;font-size:16px;">O</span>
+            <td style="width:32px;height:32px;border-radius:8px;text-align:center;vertical-align:middle;overflow:hidden;">
+              <img src="${APP_URL}/favicon.svg" width="32" height="32" alt="OpenUni" style="display:block;border-radius:8px;" onerror="this.style.display='none';this.parentNode.innerHTML='<div style=\"width:32px;height:32px;background:#4F7EF7;border-radius:8px;display:flex;align-items:center;justify-content:center;\"><span style=\"color:white;font-weight:700;font-size:16px;\">O</span></div>'" />
             </td>
             <td style="padding-left:10px;">
               <div style="font-weight:700;color:#fff;font-size:15px;">OpenUni</div>
