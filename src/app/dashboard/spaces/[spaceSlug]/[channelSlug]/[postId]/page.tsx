@@ -1,6 +1,7 @@
 // src/app/dashboard/spaces/[spaceSlug]/[channelSlug]/[postId]/page.tsx
 'use client'
 import { db } from '@/lib/firebase'
+import { onSnapshot, doc } from 'firebase/firestore'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { Lightbox } from '@/components/ui/Lightbox'
