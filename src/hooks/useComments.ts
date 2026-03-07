@@ -13,14 +13,20 @@ export function useComments(postId: string) {
   const { user: firebaseUser } = useAuthStore()
   const { profile }            = useUserProfile()
 
+  const canAccess = !!(profile !== null &&
+    (profile?.role === 'admin' || profile?.role === 'moderator' || (profile as any)?.isAdminVerified === true))
+
   useEffect(() => {
-    if (!postId) return
+    if (!postId || !canAccess) {
+      setIsLoading(false)
+      return
+    }
     const unsub = subscribeToComments(postId, data => {
       setComments(data)
       setIsLoading(false)
     })
     return () => unsub()
-  }, [postId])
+  }, [postId, canAccess])
 
   async function addComment(content: string, parentId?: string, replyToAuthor?: string) {
     if (!firebaseUser || !content.trim()) return

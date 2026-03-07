@@ -369,14 +369,16 @@ export default function PostDetailPage() {
     }
     load()
 
-    // viewCount anlık — post dokümanını dinle
+    // viewCount anlık — post dokümanını dinle (sadece erişim varsa)
+    const isVerified = profile?.role === 'admin' || profile?.role === 'moderator' || (profile as any)?.isAdminVerified === true
+    if (!isVerified) return
     const unsub = onSnapshot(doc(db, 'posts', params.postId), (snap) => {
       if (snap.exists()) {
         setPost(prev => prev ? { ...prev, viewCount: snap.data().viewCount ?? 0, viewedBy: snap.data().viewedBy ?? [] } : prev)
       }
     })
     return () => unsub()
-  }, [params.postId, params.spaceSlug])
+  }, [params.postId, params.spaceSlug, profile])
 
   useEffect(() => {
     if (profile?.bookmarks && post) {

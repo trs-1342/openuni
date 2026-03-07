@@ -17,12 +17,13 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError]       = useState('')
 
-  const isValidEmail = email.endsWith('@ogr.gelisim.edu.tr')
+  const isIGU = email.endsWith('@ogr.gelisim.edu.tr')
+  const isValidEmail = email.includes('@') && email.length > 5
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!isValidEmail) {
-      setError('Lütfen öğrenci e-posta adresinizi kullanın (@ogr.gelisim.edu.tr)')
+      setError('Geçerli bir e-posta adresi girin')
       return
     }
     setIsLoading(true)
@@ -123,7 +124,7 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setError('') }}
-                  placeholder="ad.soyad@ogr.gelisim.edu.tr"
+                  placeholder="e-posta adresiniz"
                   className={cn(
                     'input pl-10',
                     email && !isValidEmail && 'border-accent-red/50 focus:border-accent-red focus:ring-accent-red/20',
@@ -136,7 +137,7 @@ export default function LoginPage() {
               {email && !isValidEmail && (
                 <p className="text-2xs text-accent-red mt-1.5 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
-                  @ogr.gelisim.edu.tr uzantılı e-posta gerekli
+
                 </p>
               )}
             </div>

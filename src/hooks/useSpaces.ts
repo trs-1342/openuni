@@ -1,12 +1,9 @@
 'use client'
-
 import { useEffect, useState } from 'react'
-import { subscribeToSpaces, subscribeToAllSpaces, getSpaceBySlug } from '@/lib/firestore'
+import { subscribeToSpaces, getSpaceBySlug } from '@/lib/firestore'
 import { useAuthStore } from '@/store/authStore'
-import { useUserProfile } from '@/hooks/useUserProfile'
+import { useAccess } from '@/hooks/useAccess'
 import type { Space } from '@/types'
-
-const ADMIN_EMAIL = 'khalil.khattab@ogr.gelisim.edu.tr'
 
 export function useSpaces() {
   const [spaces, setSpaces] = useState<Space[]>([])
@@ -14,21 +11,21 @@ export function useSpaces() {
   const [error, setError] = useState<string | null>(null)
 
   const { user } = useAuthStore()
-  const { profile } = useUserProfile()
-
-  const isAdminOrMod = user?.email === ADMIN_EMAIL ||
-    profile?.role === 'admin' ||
-    profile?.role === 'moderator'
+  const { canAccess } = useAccess()
 
   useEffect(() => {
-    // Admin/mod tüm toplulukları (özel dahil) görsün
-    const subscribe = isAdminOrMod ? subscribeToAllSpaces : subscribeToSpaces
-    const unsub = subscribe((data) => {
+    if (!user || !canAccess) {
+      setIsLoading(false)
+      return
+    }
+    // Tüm kullanıcılar aynı sorguyu kullanır — isPublic: true spaces
+    // Özel spaces ayrı bir sayfada admin panelinden yönetilir
+    const unsub = subscribeToSpaces((data) => {
       setSpaces(data)
       setIsLoading(false)
     })
     return () => unsub()
-  }, [isAdminOrMod])
+  }, [user, canAccess])
 
   return { spaces, isLoading, error }
 }

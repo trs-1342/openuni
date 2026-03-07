@@ -102,7 +102,8 @@ export async function getSpaces(): Promise<Space[]> {
 export function subscribeToSpaces(callback: (spaces: Space[]) => void): Unsubscribe {
   return onSnapshot(
     query(collection(db, 'spaces'), where('isPublic', '==', true), orderBy('memberCount', 'desc')),
-    (snap) => callback(snap.docs.map(spaceFromDoc))
+    (snap) => callback(snap.docs.map(spaceFromDoc)),
+    (err) => console.error('[subscribeToSpaces]', err.code, err.message)
   )
 }
 
@@ -110,7 +111,8 @@ export function subscribeToAllSpaces(callback: (spaces: Space[]) => void): Unsub
   // Admin/mod için tüm topluluklar (özel dahil)
   return onSnapshot(
     query(collection(db, 'spaces'), orderBy('memberCount', 'desc')),
-    (snap) => callback(snap.docs.map(spaceFromDoc))
+    (snap) => callback(snap.docs.map(spaceFromDoc)),
+    (err) => console.error('[subscribeToAllSpaces]', err.code, err.message)
   )
 }
 
@@ -185,7 +187,8 @@ export function subscribeToPosts(
       orderBy('createdAt', 'desc'),
       limit(20)
     ),
-    (snap) => callback(snap.docs.map(postFromDoc))
+    (snap) => callback(snap.docs.map(postFromDoc)),
+    (err) => console.error('[subscribeToPosts]', err.code, err.message)
   )
 }
 
@@ -323,7 +326,8 @@ export function subscribeToNotifications(
       orderBy('createdAt', 'desc'),
       limit(30)
     ),
-    (snap) => callback(snap.docs.map(notifFromDoc))
+    (snap) => callback(snap.docs.map(notifFromDoc)),
+    (err) => console.error('[subscribeToNotifications]', err.code, err.message)
   )
 }
 
@@ -385,7 +389,8 @@ export function subscribeToComments(
       where('postId', '==', postId),
       orderBy('createdAt', 'asc')
     ),
-    (snap) => callback(snap.docs.map(commentFromDoc))
+    (snap) => callback(snap.docs.map(commentFromDoc)),
+    (err) => console.error('[subscribeToComments]', err.code, err.message)
   )
 }
 
@@ -962,4 +967,24 @@ export async function getBookmarkedPosts(postIds: string[]): Promise<Post[]> {
   if (!postIds || postIds.length === 0) return []
   const results = await Promise.all(postIds.map(id => getDoc(doc(db, 'posts', id))))
   return results.filter(s => s.exists()).map(postFromDoc)
+}
+
+// ─── SYSTEM LOGS ─────────────────────────────────────────────────────────────
+export async function writeSystemLog(entry: {
+  level: 'info' | 'warn' | 'error'
+  message: string
+  source?: string
+  details?: any
+  userEmail?: string
+  userId?: string
+}) {
+  try {
+    await addDoc(collection(db, 'systemLogs'), {
+      ...entry,
+      details: entry.details ? (typeof entry.details === 'string' ? entry.details : JSON.stringify(entry.details)) : null,
+      createdAt: serverTimestamp(),
+    })
+  } catch {
+    // log yazımı başarısız olursa sessizce geç
+  }
 }

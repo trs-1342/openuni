@@ -20,6 +20,7 @@ import {
   Ban, VolumeX, Volume2, ShieldCheck, ShieldOff, Trash2,
   AlertTriangle, CheckCircle, X, Loader2, RefreshCw,
   ChevronDown, Clock, Filter, GraduationCap, Check, XCircle,
+  Activity, Info, AlertOctagon, Terminal,
 } from 'lucide-react'
 
 const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? ''
@@ -250,7 +251,9 @@ export default function AdminPage() {
   const { user: firebaseUser } = useAuthStore()
   const { profile } = useUserProfile()
 
-  const [tab,        setTab]        = useState<'users' | 'posts' | 'teachers'>('users')
+  const [tab,        setTab]        = useState<'users' | 'posts' | 'teachers' | 'logs'>('users')
+  const [logs,       setLogs]       = useState<any[]>([])
+  const [logsLoading, setLogsLoading] = useState(false)
   const [pendingTeachers, setPendingTeachers] = useState<any[]>([])
   const [teachersLoading, setTeachersLoading] = useState(false)
   const [users,      setUsers]      = useState<User[]>([])
@@ -301,6 +304,19 @@ export default function AdminPage() {
       console.warn('[loadTeachers]', e?.code, e?.message)
       setPendingTeachers([])
     } finally { setTeachersLoading(false) }
+  }
+
+  async function loadLogs() {
+    setLogsLoading(true)
+    try {
+      const { getDocs, query, collection, orderBy, limit } = await import('firebase/firestore')
+      const { db } = await import('@/lib/firebase')
+      const snap = await getDocs(query(collection(db, 'systemLogs'), orderBy('createdAt', 'desc'), limit(100)))
+      setLogs(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() ?? new Date() })))
+    } catch (e: any) {
+      // systemLogs koleksiyonu henüz yoksa boş bırak
+      setLogs([])
+    } finally { setLogsLoading(false) }
   }
 
   async function handleTeacherAction(teacher: any, action: 'approve' | 'reject') {
@@ -477,6 +493,7 @@ export default function AdminPage() {
               { id: 'users',    icon: Users,          label: 'Kullanıcılar' },
               { id: 'posts',    icon: FileText,        label: 'Gönderiler' },
               { id: 'teachers', icon: GraduationCap,  label: `Öğretmen Onayı${pendingTeachers.length > 0 ? ` (${pendingTeachers.length})` : ''}` },
+              { id: 'logs',     icon: Activity,         label: 'Sistem Logları' },
             ].map(t => {
               const Icon = t.icon
               return (
@@ -569,6 +586,54 @@ export default function AdminPage() {
                       onDelete={id => setPosts((prev: any) => prev.filter((x: any) => x.id !== id))} />
                   ))
               }
+            </div>
+          ) : tab === 'logs' ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-text-muted">{logs.length} log kaydı</p>
+                <button onClick={loadLogs} disabled={logsLoading}
+                  className="text-xs text-text-muted hover:text-text-secondary flex items-center gap-1">
+                  <RefreshCw className={cn('w-3 h-3', logsLoading && 'animate-spin')} />Yenile
+                </button>
+              </div>
+              {logsLoading ? (
+                <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-brand animate-spin" /></div>
+              ) : logs.length === 0 ? (
+                <div className="text-center py-12 card">
+                  <Terminal className="w-8 h-8 text-text-muted mx-auto mb-3" />
+                  <p className="text-sm text-text-secondary font-medium">Log kaydı yok</p>
+                  <p className="text-xs text-text-muted mt-1">Sistem olayları burada görünecek</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {logs.map((log: any) => {
+                    const isError = log.level === 'error'
+                    const isWarn  = log.level === 'warn'
+                    const Icon = isError ? AlertOctagon : isWarn ? AlertTriangle : Info
+                    const color = isError ? 'text-accent-red' : isWarn ? 'text-accent-amber' : 'text-accent-blue'
+                    const bg    = isError ? 'bg-accent-red/5 border-accent-red/20' : isWarn ? 'bg-accent-amber/5 border-accent-amber/20' : 'bg-surface border-surface-border'
+                    return (
+                      <div key={log.id} className={cn('rounded-xl border p-3 space-y-1.5', bg)}>
+                        <div className="flex items-start gap-2">
+                          <Icon className={cn('w-3.5 h-3.5 mt-0.5 shrink-0', color)} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-text-primary">{log.message}</p>
+                            {log.details && (
+                              <p className="text-2xs text-text-muted mt-0.5 font-mono break-all">{typeof log.details === 'object' ? JSON.stringify(log.details) : log.details}</p>
+                            )}
+                          </div>
+                          <span className="text-2xs text-text-muted shrink-0 ml-2">{log.createdAt?.toLocaleTimeString?.('tr-TR') ?? ''}</span>
+                        </div>
+                        <div className="flex items-center gap-2 pt-1 border-t border-surface-border/50">
+                          {log.userEmail && <span className="text-2xs bg-surface border border-surface-border rounded px-1.5 py-0.5 text-text-muted">{log.userEmail}</span>}
+                          {log.source && <span className="text-2xs bg-surface border border-surface-border rounded px-1.5 py-0.5 text-text-muted font-mono">{log.source}</span>}
+                          <span className="text-2xs text-text-muted ml-auto">{log.createdAt?.toLocaleDateString?.('tr-TR') ?? ''}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
