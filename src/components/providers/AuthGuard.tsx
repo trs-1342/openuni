@@ -7,38 +7,29 @@ import { useUserProfile } from '@/hooks/useUserProfile'
 
 export function AuthGuard({ children }: any) {
   const { user, isInitialized } = useAuthStore()
-  const { profile } = useUserProfile()
+  const { profile, isLoading: profileLoading } = useUserProfile()
   const router = useRouter()
-  const isAdminVerified = (profile as any)?.isAdminVerified
-  const isPending = isAdminVerified === false
 
   useEffect(() => {
     if (!isInitialized) return
-    if (!user) {
-      router.replace('/auth/login')
-      return
-    }
-    // E-posta doğrulanmamışsa verify-email'e gönder
-    if (!user.emailVerified) {
-      router.replace('/auth/verify-email')
-    }
+    if (!user) { router.replace('/auth/login'); return }
+    if (!user.emailVerified) { router.replace('/auth/verify-email'); return }
   }, [user, isInitialized, router])
 
-  if (!isInitialized) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-brand/30 border-t-brand rounded-full animate-spin" />
-          <p className="text-xs text-text-muted">Yükleniyor...</p>
-        </div>
-      </div>
-    )
-  }
+  // Auth henüz başlatılmadı
+  if (!isInitialized) return <Spinner />
 
+  // Giriş yok veya email doğrulanmamış
   if (!user || !user.emailVerified) return null
 
-  // Admin onayı bekleniyor
-  if (isPending) {
+  // Profile yüklenene kadar bekle — erken render permission-denied tetikler
+  if (profileLoading || profile === null) return <Spinner />
+
+  const isAdminVerified = (profile as any)?.isAdminVerified
+  const isMod = profile?.role === 'admin' || profile?.role === 'moderator'
+
+  // Admin/mod her zaman geçer, normal kullanıcı onay bekliyor
+  if (!isMod && isAdminVerified === false) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="max-w-sm w-full text-center space-y-4">
@@ -54,7 +45,11 @@ export function AuthGuard({ children }: any) {
             <p className="text-xs font-medium text-text-primary">{user.email}</p>
           </div>
           <button
-            onClick={async () => { const { logoutUser } = await import('@/lib/auth'); await logoutUser(); router.replace('/auth/login') }}
+            onClick={async () => {
+              const { logoutUser } = await import('@/lib/auth')
+              await logoutUser()
+              router.replace('/auth/login')
+            }}
             className="text-xs text-text-muted hover:text-accent-red transition-colors"
           >
             Çıkış Yap
@@ -65,4 +60,15 @@ export function AuthGuard({ children }: any) {
   }
 
   return <>{children}</>
+}
+
+function Spinner() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-brand/30 border-t-brand rounded-full animate-spin" />
+        <p className="text-xs text-text-muted">Yükleniyor...</p>
+      </div>
+    </div>
+  )
 }
