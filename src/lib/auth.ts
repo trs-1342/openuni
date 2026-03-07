@@ -100,6 +100,8 @@ export async function registerUser(data: RegisterData): Promise<User> {
       isVerified:      false,
       teacherApproved: isTeacher ? false : null,
       isAdminVerified: false,
+      isBanned:        false,
+      isMuted:         false,
       joinedAt:        serverTimestamp(),
       lastActiveAt:    serverTimestamp(),
     })
