@@ -148,9 +148,6 @@ export async function registerUser(data: RegisterData): Promise<User> {
 
 export async function loginUser(email: string, password: string): Promise<User> {
   email = email.trim().toLowerCase()
-  if (!isValidStudentEmail(email)) {
-    throw new Error('Yalnızca @ogr.gelisim.edu.tr uzantılı e-posta ile giriş yapılabilir.')
-  }
   const { user } = await signInWithEmailAndPassword(auth, email, password)
   return user
 }
@@ -235,8 +232,8 @@ export async function ensureUserProfile(user: User) {
 // ─── Parola Sıfırlama ─────────────────────────────────────────────────────
 export async function resetPassword(email: string): Promise<void> {
   const normalized = email.trim().toLowerCase()
-  if (!isValidStudentEmail(normalized)) {
-    throw new Error('Yalnızca @ogr.gelisim.edu.tr uzantılı e-posta kabul edilir.')
+  if (!normalized.includes('@') || normalized.length < 5) {
+    throw new Error('Geçerli bir e-posta adresi girin.')
   }
   const actionCodeSettings = {
     url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://openigu.vercel.app'}/auth/login`,
