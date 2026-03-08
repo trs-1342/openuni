@@ -212,10 +212,10 @@ function CommentItem({
 
   return (
     <div className={cn('flex gap-3 group', comment.parentId && 'ml-8 pl-3 border-l border-surface-border')}>
-      <Link href={`/dashboard/profile/${comment.author.username ?? comment.author.uid}`} className="shrink-0 mt-0.5"><Avatar name={comment.author.displayName} src={comment.author.avatarUrl} size="sm" className="hover:ring-2 hover:ring-brand/30 transition-all" /></Link>
+      <Link href={`/dashboard/profile/${comment.author.username || comment.author.uid}`} className="shrink-0 mt-0.5"><Avatar name={comment.author.displayName} src={comment.author.avatarUrl} size="sm" className="hover:ring-2 hover:ring-brand/30 transition-all" /></Link>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-1">
-          <Link href={`/dashboard/profile/${comment.author.username ?? comment.author.uid}`} className="text-xs font-medium text-text-primary hover:text-brand transition-colors">{comment.author.displayName}</Link>
+          <Link href={`/dashboard/profile/${comment.author.username || comment.author.uid}`} className="text-xs font-medium text-text-primary hover:text-brand transition-colors">{comment.author.displayName}</Link>
           <RoleBadge role={comment.author.role} />
           {comment.author.uid === postAuthorId && (
             <span className="text-2xs text-brand bg-brand/10 px-1.5 py-0.5 rounded-sm font-medium">Yazar</span>
@@ -548,7 +548,7 @@ export default function PostDetailPage() {
               <p className="text-center text-xs text-text-muted py-8">Henüz görüntüleyen yok</p>
             ) : (
               viewerProfiles.map(u => (
-                <Link key={u.uid} href={`/dashboard/profile/${u.username ?? u.uid}`}
+                <Link key={u.uid} href={`/dashboard/profile/${u.username || u.uid}`}
                   onClick={() => setShowViewers(false)}
                   className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface transition-colors">
                   <Avatar name={u.displayName} src={u.avatarUrl} size="sm" />
@@ -601,12 +601,12 @@ export default function PostDetailPage() {
           <article className="card space-y-4">
             {/* Header */}
             <div className="flex items-start gap-3">
-              <Link href={`/dashboard/profile/${post.author.username ?? post.author.uid}`} className="shrink-0 mt-0.5">
+              <Link href={`/dashboard/profile/${post.author.username || post.author.uid}`} className="shrink-0 mt-0.5">
                 <Avatar name={post.author.displayName} src={post.author.avatarUrl} size="md" className="hover:ring-2 hover:ring-brand/30 transition-all" />
               </Link>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Link href={`/dashboard/profile/${post.author.username ?? post.author.uid}`} className="text-sm font-medium text-text-primary hover:text-brand transition-colors">{post.author.displayName}</Link>
+                  <Link href={`/dashboard/profile/${post.author.username || post.author.uid}`} className="text-sm font-medium text-text-primary hover:text-brand transition-colors">{post.author.displayName}</Link>
                   <RoleBadge role={post.author.role} />
                   <span className="text-2xs text-text-muted">{timeAgo(post.createdAt)}</span>
                   {post.isPinned && <span className="flex items-center gap-1 text-2xs text-accent-amber"><Pin className="w-2.5 h-2.5" />Sabitlenmiş</span>}

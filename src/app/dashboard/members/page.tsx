@@ -128,7 +128,7 @@ export default function MembersPage() {
                 return (
                   <Link
                     key={u.uid}
-                    href={`/dashboard/profile/${(u as any).username ?? u.uid}`}
+                    href={`/dashboard/profile/${(u as any).username || u.uid}`}
                     className="card flex items-center gap-3 hover:bg-surface-hover hover:border-surface-active transition-all group"
                   >
                     <Avatar name={u.displayName} src={u.avatarUrl} size="md" className="shrink-0" />

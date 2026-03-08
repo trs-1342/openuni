@@ -710,7 +710,13 @@ export function Sidebar({ onClose }: SidebarProps) {
             <Avatar name={displayName} src={(profile as any)?.avatarUrl ?? undefined} size="sm" />
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-text-primary truncate">{displayName}</div>
-              <div className="text-2xs text-text-muted truncate">{department || 'Öğrenci'}</div>
+              <div className="text-2xs text-text-muted truncate">
+                {(profile as any)?.userType === 'visitor'
+                  ? 'Misafir'
+                  : (profile as any)?.userType === 'ogretmen' || (profile as any)?.userType === 'pending_teacher'
+                  ? 'Öğretmen'
+                  : department || 'Öğrenci'}
+              </div>
             </div>
             {(firebaseUser?.email === ADMIN_EMAIL || profile?.role === 'admin') && (
               <Link href="/dashboard/admin" title="Admin Paneli" onClick={onClose}

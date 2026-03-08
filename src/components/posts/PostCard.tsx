@@ -28,12 +28,12 @@ export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: 
       )}>
         {/* Header */}
         <div className="flex items-start gap-3">
-          <Link href={`/dashboard/profile/${post.author.username ?? post.author.uid}`} onClick={e => e.stopPropagation()} className="shrink-0 mt-0.5">
+          <Link href={`/dashboard/profile/${post.author.username || post.author.uid}`} onClick={e => e.stopPropagation()} className="shrink-0 mt-0.5">
             <Avatar name={post.author.displayName} src={post.author.avatarUrl} size="sm" className="hover:ring-2 hover:ring-brand/30 transition-all" />
           </Link>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <Link href={`/dashboard/profile/${post.author.username ?? post.author.uid}`} onClick={e => e.stopPropagation()}
+              <Link href={`/dashboard/profile/${post.author.username || post.author.uid}`} onClick={e => e.stopPropagation()}
                 className="text-xs font-medium text-text-secondary hover:text-brand transition-colors">{post.author.displayName}</Link>
               <RoleBadge role={post.author.role} />
               <span className="text-2xs text-text-muted">{timeAgo(post.createdAt)}</span>
