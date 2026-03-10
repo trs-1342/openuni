@@ -37,7 +37,8 @@ export default function LoginPage() {
         // Admin-onaylı kullanıcılar (misafirler dahil) email doğrulaması olmadan girebilir
         try {
           const profile = await getUserProfile(user.uid)
-          if (profile?.isAdminVerified) {
+          // if (profile?.isAdminVerified) { TODO: rapor et
+          if (profile?.isVerified) {
             router.replace('/dashboard')
             return
           }
