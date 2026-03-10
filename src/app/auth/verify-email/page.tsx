@@ -35,7 +35,8 @@ function VerifyEmailContent() {
       if (!user) return
       try {
         const profile = await getUserProfile(user.uid)
-        if (profile?.isAdminVerified) {
+        // if (profile?.isAdminVerified) {
+        if (profile?.isVerified) {
           router.replace('/dashboard')
         }
       } catch {
@@ -93,7 +94,8 @@ function VerifyEmailContent() {
         // Firebase email doğrulanmamış — ama admin onaylı mı kontrol et
         try {
           const profile = await getUserProfile(user.uid)
-          if (profile?.isAdminVerified) {
+          // if (profile?.isAdminVerified) {
+          if (profile?.isVerified) {
             setStatus('success')
             setTimeout(() => router.replace('/dashboard'), 1500)
             return
