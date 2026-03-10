@@ -217,6 +217,9 @@ function CommentItem({
         <div className="flex items-center gap-2 flex-wrap mb-1">
           <Link href={`/dashboard/profile/${comment.author.username || comment.author.uid}`} className="text-xs font-medium text-text-primary hover:text-brand transition-colors">{comment.author.displayName}</Link>
           <RoleBadge role={comment.author.role} />
+          {(comment.author as any).userType === 'visitor' && (
+            <span className="text-2xs text-accent-purple bg-accent-purple/10 px-1.5 py-0.5 rounded-sm font-medium border border-accent-purple/20">Misafir</span>
+          )}
           {comment.author.uid === postAuthorId && (
             <span className="text-2xs text-brand bg-brand/10 px-1.5 py-0.5 rounded-sm font-medium">Yazar</span>
           )}
@@ -369,14 +372,12 @@ export default function PostDetailPage() {
     }
     load()
 
-    // viewCount anlık — post dokümanını dinle (sadece erişim varsa)
-    const isVerified = profile?.role === 'admin' || profile?.role === 'moderator' || (profile as any)?.isAdminVerified === true
-    if (!isVerified) return
+    // viewCount anlık — post dokümanını dinle
     const unsub = onSnapshot(doc(db, 'posts', params.postId), (snap) => {
       if (snap.exists()) {
         setPost(prev => prev ? { ...prev, viewCount: snap.data().viewCount ?? 0, viewedBy: snap.data().viewedBy ?? [] } : prev)
       }
-    })
+    }, () => { /* permission hatası olursa sessizce geç */ })
     return () => unsub()
   }, [params.postId, params.spaceSlug, profile])
 
@@ -608,6 +609,9 @@ export default function PostDetailPage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <Link href={`/dashboard/profile/${post.author.username || post.author.uid}`} className="text-sm font-medium text-text-primary hover:text-brand transition-colors">{post.author.displayName}</Link>
                   <RoleBadge role={post.author.role} />
+                  {(post.author as any).userType === 'visitor' && (
+                    <span className="text-2xs text-accent-purple bg-accent-purple/10 px-1.5 py-0.5 rounded-sm font-medium border border-accent-purple/20">Misafir</span>
+                  )}
                   <span className="text-2xs text-text-muted">{timeAgo(post.createdAt)}</span>
                   {post.isPinned && <span className="flex items-center gap-1 text-2xs text-accent-amber"><Pin className="w-2.5 h-2.5" />Sabitlenmiş</span>}
                   {post.isEdited && <span className="text-2xs text-text-muted italic">(düzenlendi)</span>}

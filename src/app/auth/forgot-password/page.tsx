@@ -12,12 +12,13 @@ export default function ForgotPasswordPage() {
   const [error,     setError]     = useState('')
   const [sent,      setSent]      = useState(false)
 
-  const isValidEmail = email.trim().toLowerCase().endsWith('@ogr.gelisim.edu.tr')
+  // Hem öğrenci hem misafir emaillerini kabul et
+  const isValidEmail = email.includes('@') && email.trim().length > 5
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!isValidEmail) {
-      setError('Lütfen öğrenci e-posta adresinizi girin (@ogr.gelisim.edu.tr)')
+      setError('Lütfen geçerli bir e-posta adresi girin.')
       return
     }
     setIsLoading(true)
@@ -87,7 +88,7 @@ export default function ForgotPasswordPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1.5">
-                  Öğrenci E-posta Adresi
+                  E-posta Adresi
                 </label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
@@ -95,7 +96,7 @@ export default function ForgotPasswordPage() {
                     type="email"
                     value={email}
                     onChange={e => { setEmail(e.target.value); setError('') }}
-                    placeholder="ad.soyad@ogr.gelisim.edu.tr"
+                    placeholder="e-posta adresiniz"
                     className={cn(
                       'input pl-10 w-full transition-colors',
                       error && 'border-accent-red/50 focus:border-accent-red'
@@ -111,8 +112,8 @@ export default function ForgotPasswordPage() {
                     isValidEmail ? 'text-accent-green' : 'text-text-muted'
                   )}>
                     {isValidEmail
-                      ? <><CheckCircle className="w-3 h-3" /> Geçerli öğrenci e-postası</>
-                      : '@ogr.gelisim.edu.tr ile bitmeli'
+                      ? <><CheckCircle className="w-3 h-3" /> Geçerli e-posta adresi</>
+                      : 'Geçerli bir e-posta adresi girin'
                     }
                   </p>
                 )}

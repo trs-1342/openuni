@@ -213,12 +213,15 @@ export async function createPost(data_input: {
   if (data.title.length > 200) throw new Error('Başlık en fazla 200 karakter olabilir.')
   if (data.content.length > 20000) throw new Error('İçerik çok uzun.')
   if (data.tags.length > 10) throw new Error('En fazla 10 etiket eklenebilir.')
-  // author.role'ü Firestore'dan fresh oku — post oluşturulurken stale profile'dan gelmesin
+  // author.role ve userType'ı Firestore'dan fresh oku — post oluşturulurken stale profile'dan gelmesin
   try {
     const userSnap = await getDoc(doc(db, 'users', data.author.uid))
     if (userSnap.exists()) {
-      const freshRole = userSnap.data().role
+      const userData = userSnap.data()
+      const freshRole = userData.role
+      const freshUserType = userData.userType
       if (freshRole) data = { ...data, author: { ...data.author, role: freshRole } }
+      if (freshUserType) data = { ...data, author: { ...data.author, userType: freshUserType } as any }
     }
   } catch { /* role fetch başarısız olursa mevcut değeri kullan */ }
 
@@ -407,12 +410,15 @@ export async function createComment(data_input: {
   if ((userProfile as any)?.isAdminVerified === false) throw new Error('Hesabınız henüz onaylanmadı.')
   if (!data.content.trim()) throw new Error('Yorum boş olamaz.')
   if (data.content.length > 5000) throw new Error('Yorum en fazla 5000 karakter olabilir.')
-  // author.role'ü Firestore'dan fresh oku
+  // author.role ve userType'ı Firestore'dan fresh oku
   try {
     const userSnap = await getDoc(doc(db, 'users', data.author.uid))
     if (userSnap.exists()) {
-      const freshRole = userSnap.data().role
+      const userData = userSnap.data()
+      const freshRole = userData.role
+      const freshUserType = userData.userType
       if (freshRole) data = { ...data, author: { ...data.author, role: freshRole } }
+      if (freshUserType) data = { ...data, author: { ...data.author, userType: freshUserType } as any }
     }
   } catch { /* mevcut değeri kullan */ }
 

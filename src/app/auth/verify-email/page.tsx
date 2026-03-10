@@ -5,6 +5,7 @@ import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { resendVerificationEmail } from '@/lib/auth'
+import { getUserProfile } from '@/lib/firestore'
 import { auth } from '@/lib/firebase'
 import { applyActionCode, reload } from 'firebase/auth'
 import { cn } from '@/lib/utils'
@@ -26,6 +27,23 @@ function VerifyEmailContent() {
     const t = setTimeout(() => setCooldown(c => c - 1), 1000)
     return () => clearTimeout(t)
   }, [cooldown])
+
+  // Sayfa yüklendiğinde: admin-onaylı kullanıcıyı doğrudan dashboard'a yönlendir
+  useEffect(() => {
+    async function checkAdminVerified() {
+      const user = auth.currentUser
+      if (!user) return
+      try {
+        const profile = await getUserProfile(user.uid)
+        if (profile?.isAdminVerified) {
+          router.replace('/dashboard')
+        }
+      } catch {
+        // Firestore hatası — doğrulama sayfasında kal
+      }
+    }
+    checkAdminVerified()
+  }, [router])
 
   // URL'de oobCode varsa otomatik işle
   useEffect(() => {
@@ -72,6 +90,15 @@ function VerifyEmailContent() {
         setStatus('success')
         setTimeout(() => router.replace('/dashboard'), 1500)
       } else {
+        // Firebase email doğrulanmamış — ama admin onaylı mı kontrol et
+        try {
+          const profile = await getUserProfile(user.uid)
+          if (profile?.isAdminVerified) {
+            setStatus('success')
+            setTimeout(() => router.replace('/dashboard'), 1500)
+            return
+          }
+        } catch { /* devam et */ }
         setError('E-posta henüz doğrulanmamış. Gelen kutundaki linke tıkla.')
       }
     } catch { setError('Kontrol sırasında hata oluştu.') }
@@ -124,6 +151,10 @@ function VerifyEmailContent() {
     </div>
   )
 
+  // Kullanıcının email türüne göre dinamik metin
+  const userEmail = auth.currentUser?.email ?? ''
+  const isStudentEmail = userEmail.endsWith('@ogr.gelisim.edu.tr') || userEmail.endsWith('@gelisim.edu.tr')
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <div className="w-full max-w-sm text-center">
@@ -132,10 +163,20 @@ function VerifyEmailContent() {
         </div>
         <h1 className="font-display font-bold text-2xl text-text-primary mb-2">E-postanı Doğrula</h1>
         <p className="text-text-secondary text-sm leading-relaxed mb-6">
-          <span className="text-text-primary font-medium">@ogr.gelisim.edu.tr</span> adresine link gönderdik. Linke tıklayınca otomatik olarak giriş yapılacak.
+          <span className="text-text-primary font-medium">{userEmail || 'E-posta adresinize'}</span>
+          {' '}adresine doğrulama linki gönderdik.
+          {!isStudentEmail && (
+            <span className="block text-text-muted text-xs mt-1">
+              Misafir hesaplar admin onayı sonrası da giriş yapabilir.
+            </span>
+          )}
         </p>
         <div className="card text-left space-y-3 mb-6">
-          {['Öğrenci e-posta kutunu aç', 'OpenUni\'den gelen e-postayı bul', 'E-postadaki linke tıkla — otomatik giriş yapılır'].map((s, i) => (
+          {[
+            'E-posta kutunu aç',
+            'OpenUni\'den gelen e-postayı bul',
+            'E-postadaki linke tıkla — otomatik giriş yapılır',
+          ].map((s, i) => (
             <div key={i} className="flex items-start gap-3">
               <span className="w-5 h-5 rounded-full bg-brand/10 text-brand text-2xs font-bold flex items-center justify-center shrink-0 mt-0.5">{i+1}</span>
               <span className="text-xs text-text-secondary">{s}</span>

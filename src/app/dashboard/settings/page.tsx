@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Avatar } from '@/components/ui/Avatar'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { useAuthStore } from '@/store/authStore'
+import { DeleteAccountSection } from '@/components/settings/DeleteAccountSection'
 import { updateUserProfile, setUsername as saveUsernameToFirestore, isUsernameTaken } from '@/lib/firestore'
 import { useThemeStore, THEMES } from '@/store/themeStore'
 import type { Theme } from '@/store/themeStore'
@@ -1050,6 +1051,14 @@ export default function SettingsPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Hesap Silme */}
+              <div>
+                <h3 className="text-xs font-semibold text-accent-red/70 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Trash2 className="w-3.5 h-3.5" />Tehlikeli Alan
+                </h3>
+                <DeleteAccountSection />
               </div>
             </section>
           )}

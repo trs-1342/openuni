@@ -11,10 +11,13 @@ service cloud.firestore {
     }
     function isStudentEmail() {
       return isSignedIn() &&
-        request.auth.token.email.matches('.*@ogr\\.gelisim\\.edu\\.tr');
+        request.auth.token.email.matches('.*@(ogr\\.)?gelisim\\.edu\\.tr');
+    }
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
     function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return getUserData().role;
     }
     function isModerator() {
       return isSignedIn() && getUserRole() in ['moderator', 'admin'];
@@ -22,20 +25,34 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && getUserRole() == 'admin';
     }
+    // Okuma izni: onaylı kullanıcılar
+    function isApprovedUser() {
+      return isSignedIn() && (
+        isStudentEmail() ||
+        isModerator() ||
+        getUserData().isAdminVerified == true
+      );
+    }
+    // Yazma izni: email doğrulanmış VEYA admin/mod VEYA admin-onaylı
+    function canWrite() {
+      return isSignedIn() && (
+        isVerified() ||
+        isModerator() ||
+        getUserData().isAdminVerified == true
+      );
+    }
 
     // ─── Users ────────────────────────────────────────────────────────────────
     match /users/{userId} {
       allow read: if isSignedIn();
-      // Kullanıcı kendi profilini oluşturabilir/güncelleyebilir
       allow create, update: if isSignedIn() && request.auth.uid == userId;
-      // Admin/mod başkasının profilini güncelleyebilir (ban/mute/rol)
       allow update: if isModerator();
+      allow delete: if isSignedIn() && request.auth.uid == userId;
     }
 
     // ─── Spaces ───────────────────────────────────────────────────────────────
     match /spaces/{spaceId} {
-      allow read: if isSignedIn() && isStudentEmail();
-      // Moderatör/admin oluşturabilir ve güncelleyebilir
+      allow read: if isApprovedUser();
       allow create: if isModerator();
       allow update: if isModerator();
       allow delete: if isAdmin();
@@ -43,32 +60,61 @@ service cloud.firestore {
 
     // ─── Posts ────────────────────────────────────────────────────────────────
     match /posts/{postId} {
-      allow read: if isSignedIn() && isStudentEmail();
-      allow create: if isVerified() && isStudentEmail() &&
+      allow read: if isApprovedUser();
+
+      // Yeni post oluşturma
+      allow create: if canWrite() && isApprovedUser() &&
         request.resource.data.authorId == request.auth.uid;
-      allow update: if isVerified() && (
+
+      // viewCount, viewedBy, commentCount, reactions — onaylı herkes güncelleyebilir
+      // Bu alanlar: görüntüleme sayısı, yorum sayısı ve emoji tepkileri için gerekli
+      allow update: if isApprovedUser() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['viewCount', 'viewedBy', 'commentCount', 'reactions']);
+
+      // İçerik düzenleme — yazar veya moderatör
+      allow update: if canWrite() && (
         resource.data.authorId == request.auth.uid || isModerator()
       );
-      allow delete: if isModerator();
+
+      // Silme — moderatör veya yazarın kendisi
+      allow delete: if isModerator() || (canWrite() && resource.data.authorId == request.auth.uid);
     }
 
     // ─── Comments ─────────────────────────────────────────────────────────────
     match /comments/{commentId} {
-      allow read: if isSignedIn() && isStudentEmail();
-      allow create: if isVerified() && isStudentEmail() &&
+      allow read: if isApprovedUser();
+
+      allow create: if canWrite() && isApprovedUser() &&
         request.resource.data.authorId == request.auth.uid;
-      allow update: if isVerified() && (
+
+      // Reactions — onaylı herkes güncelleyebilir
+      allow update: if isApprovedUser() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['reactions']);
+
+      // İçerik düzenleme — yazar veya moderatör
+      allow update: if canWrite() && (
         resource.data.authorId == request.auth.uid || isModerator()
       );
-      allow delete: if isModerator();
+
+      allow delete: if isModerator() || (canWrite() && resource.data.authorId == request.auth.uid);
     }
 
     // ─── Notifications ────────────────────────────────────────────────────────
     match /notifications/{notifId} {
       allow read, update: if isSignedIn() &&
         resource.data.userId == request.auth.uid;
-      // Sistem veya moderatör bildirim oluşturabilir
       allow create: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // ─── Teacher Approvals ──────────────────────────────────────────────────
+    match /teacherApprovals/{docId} {
+      allow read: if isModerator();
+      allow create: if isSignedIn() && request.auth.uid == docId;
+      allow update: if isModerator();
+      allow delete: if isModerator() || (isSignedIn() && request.auth.uid == docId);
     }
   }
 }

@@ -38,7 +38,7 @@ const FORM_CONFIG: Record<ChannelType, ChannelFormConfig> = {
     titlePlaceholder: 'Örn: Veri Yapıları Final Sınavı — Yer Değişikliği',
     contentLabel: 'Duyuru İçeriği',
     contentPlaceholder: 'Duyuruyu detaylıca açıkla. Tarih, saat, yer gibi bilgileri mutlaka belirt.',
-    showFiles: false,
+    showFiles: true,
     showTags: false,
     requiresFiles: false,
     contentRequired: true,
@@ -245,6 +245,7 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
         username:    (profile as any)?.username ?? null,
         avatarUrl:   (profile as any)?.avatarUrl ?? null,
         role:        (profile as any)?.role ?? 'student',
+        userType:    (profile as any)?.userType ?? null,
       }
 
       // Poll oluştur

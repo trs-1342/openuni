@@ -7,6 +7,7 @@ import { Eye, EyeOff, ArrowRight, Lock, Mail, AlertCircle } from 'lucide-react'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { cn } from '@/lib/utils'
 import { loginUser, getAuthErrorMessage } from '@/lib/auth'
+import { getUserProfile } from '@/lib/firestore'
 
 export default function LoginPage() {
   useAuthGuard()
@@ -30,7 +31,19 @@ export default function LoginPage() {
     setError('')
     try {
       const user = await loginUser(email, password)
+
       if (!user.emailVerified) {
+        // Firebase email doğrulaması yapılmamış — ama admin onaylı mı kontrol et
+        // Admin-onaylı kullanıcılar (misafirler dahil) email doğrulaması olmadan girebilir
+        try {
+          const profile = await getUserProfile(user.uid)
+          if (profile?.isAdminVerified) {
+            router.replace('/dashboard')
+            return
+          }
+        } catch {
+          // Firestore hatası — güvenli tarafta kal, verify'a yönlendir
+        }
         router.replace('/auth/verify-email')
       } else {
         router.replace('/dashboard')
@@ -137,7 +150,6 @@ export default function LoginPage() {
               {email && !isValidEmail && (
                 <p className="text-2xs text-accent-red mt-1.5 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
-
                 </p>
               )}
             </div>

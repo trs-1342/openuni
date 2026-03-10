@@ -99,7 +99,8 @@ export async function registerUser(data: RegisterData): Promise<User> {
       bookmarks:       [],
       isVerified:      false,
       teacherApproved: isTeacher ? false : null,
-      isAdminVerified: false,
+      // Admin hesabı kayıt anında otomatik onaylı olsun
+      isAdminVerified: user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? true : false,
       isBanned:        false,
       isMuted:         false,
       joinedAt:        serverTimestamp(),
@@ -178,20 +179,25 @@ export function subscribeToAuthState(callback: (user: User | null) => void) {
 }
 
 // İlk girişte Firestore profili yoksa oluştur
+// ÖNEMLİ: Bu fonksiyon HİÇBİR ZAMAN mevcut verileri silmemeli.
+// setDoc(..., { merge: true }) kullanarak sadece eksik alanları ekler.
 export async function ensureUserProfile(user: User) {
   try {
     const { doc: firestoreDoc, getDoc, setDoc: firestoreSetDoc, serverTimestamp: st } =
       await import('firebase/firestore')
     const { db: firestoreDb } = await import('./firebase')
+    const { generateUsername } = await import('./utils')
     const ref = firestoreDoc(firestoreDb, 'users', user.uid)
     const snap = await getDoc(ref)
+
     if (!snap.exists()) {
-      // Yeni profil oluştur (kayıt dışı bir şekilde profil yoksa)
+      // Profil hiç yok — yeni oluştur (merge:true ile güvenli)
+      const displayName = user.displayName ?? user.email?.split('@')[0] ?? 'Kullanıcı'
       await firestoreSetDoc(ref, {
         uid:                  user.uid,
         email:                user.email,
-        displayName:          user.displayName ?? user.email?.split('@')[0] ?? 'Kullanıcı',
-        username:             null,
+        displayName:          displayName,
+        username:             generateUsername(displayName, user.uid),
         usernameChangesLeft:  2,
         department:           '',
         grade:                null,
@@ -202,25 +208,44 @@ export async function ensureUserProfile(user: User) {
         isVerified:           user.emailVerified,
         isListedInDirectory:  true,
         isAdminVerified:      user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL ? true : false,
+        isBanned:             false,
+        isMuted:              false,
         bookmarks:            [],
         joinedAt:             st(),
         lastActiveAt:         st(),
-      })
+      }, { merge: true }) // ← merge:true — eğer race condition ile profil oluştuysa verileri ezmez
     } else {
-      // Mevcut profili güncelle — sadece eksik alanları ekle, mevcut verileri silme
+      // Mevcut profil var — SADECE eksik alanları ekle, mevcut verilere ASLA dokunma
       const data = snap.data()
-      // Sadece eksik alanları ekle — mevcut verilere (role, studentId, fakulte vb.) ASLA dokunma
       const updates: Record<string, any> = { lastActiveAt: st() }
+
+      // Sadece UNDEFINED olan alanları doldur — boş string veya null bile olsa dokunma
       if (data.isListedInDirectory === undefined) updates.isListedInDirectory = true
-      if (data.usernameChangesLeft  === undefined) updates.usernameChangesLeft  = 2
-      if (data.bookmarks            === undefined) updates.bookmarks            = []
-      // userType — sadece hiç yazılmamışsa varsayılan ata, MEVCUT DEĞERİ ASLA EZME
+      if (data.usernameChangesLeft === undefined) updates.usernameChangesLeft = 2
+      if (data.bookmarks           === undefined) updates.bookmarks           = []
+      if (data.isBanned            === undefined) updates.isBanned            = false
+      if (data.isMuted             === undefined) updates.isMuted             = false
+
+      // username — sadece null/undefined ise üret, boş string dahil
+      if (!data.username) {
+        const displayName = data.displayName ?? user.displayName ?? 'user'
+        updates.username = generateUsername(displayName, user.uid)
+      }
+
+      // userType — sadece hiç yazılmamışsa varsayılan ata
       if (!data.userType) updates.userType = 'lisans'
+
+      // Email doğrulama senkronu
       if (!data.isVerified && user.emailVerified) updates.isVerified = true
+
       // Admin emaili her zaman onaylı olsun
-      if (user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && !data.isAdminVerified) updates.isAdminVerified = true
-      // Aşağıdaki alanlar — mevcut değerlere HİÇBİR KOŞULDA dokunma:
-      // role, studentId, fakulte, department, grade, displayName, username, visitorUniversity
+      if (user.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && !data.isAdminVerified) {
+        updates.isAdminVerified = true
+      }
+
+      // ÖNEMLİ: Aşağıdaki alanlara HİÇBİR KOŞULDA dokunma:
+      // role, studentId, fakulte, department, grade, displayName, visitorUniversity, email
+
       const { updateDoc } = await import('firebase/firestore')
       await updateDoc(ref, updates)
     }
@@ -322,4 +347,90 @@ export async function downloadMyData(uid: string): Promise<void> {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+// ─── Hesap Silme ───────────────────────────────────────────────────────────
+// Kullanıcı hesabını tamamen siler:
+// 1. Şifre ile yeniden doğrulama
+// 2. Tüm gönderilerin author bilgisini anonimleştirir ("Silinen Hesap")
+// 3. Tüm yorumları siler
+// 4. Bildirimleri siler
+// 5. Firestore kullanıcı dokümanını siler
+// 6. Firebase Auth hesabını siler
+//
+// Her koleksiyon ayrı batch'te işlenir — bir koleksiyondaki hata diğerlerini engellemez.
+export async function deleteAccount(password: string): Promise<void> {
+  const user = auth.currentUser
+  if (!user || !user.email) throw new Error('Aktif oturum bulunamadı.')
+
+  // 1) Şifre ile yeniden doğrula
+  const credential = EmailAuthProvider.credential(user.email, password)
+  await reauthenticateWithCredential(user, credential)
+
+  const { collection: coll, query: q, where: w, getDocs: gd,
+          deleteDoc: dd, doc: d, writeBatch: wb } =
+    await import('firebase/firestore')
+  const { db: fdb } = await import('./firebase')
+
+  const uid = user.uid
+  const ANON_AUTHOR = {
+    uid:         'deleted',
+    displayName: 'Silinen Hesap',
+    username:    null,
+    role:        'student',
+    userType:    null,
+    photoURL:    null,
+  }
+
+  // 2) Gönderileri anonimleştir — ayrı batch
+  try {
+    const postsSnap = await gd(q(coll(fdb, 'posts'), w('authorId', '==', uid)))
+    let batch = wb(fdb)
+    let count = 0
+    for (const postDoc of postsSnap.docs) {
+      batch.update(postDoc.ref, { author: ANON_AUTHOR, authorId: 'deleted' })
+      count++
+      if (count >= 490) { await batch.commit(); batch = wb(fdb); count = 0 }
+    }
+    if (count > 0) await batch.commit()
+  } catch (e) { console.warn('[deleteAccount] posts anonimleştirme hatası:', e) }
+
+  // 3) Yorumları sil — ayrı batch
+  try {
+    const commentsSnap = await gd(q(coll(fdb, 'comments'), w('authorId', '==', uid)))
+    let batch = wb(fdb)
+    let count = 0
+    for (const commentDoc of commentsSnap.docs) {
+      batch.delete(commentDoc.ref)
+      count++
+      if (count >= 490) { await batch.commit(); batch = wb(fdb); count = 0 }
+    }
+    if (count > 0) await batch.commit()
+  } catch (e) { console.warn('[deleteAccount] yorum silme hatası:', e) }
+
+  // 4) Bildirimleri sil — ayrı batch
+  try {
+    const notifsSnap = await gd(q(coll(fdb, 'notifications'), w('userId', '==', uid)))
+    let batch = wb(fdb)
+    let count = 0
+    for (const notifDoc of notifsSnap.docs) {
+      batch.delete(notifDoc.ref)
+      count++
+      if (count >= 490) { await batch.commit(); batch = wb(fdb); count = 0 }
+    }
+    if (count > 0) await batch.commit()
+  } catch (e) { console.warn('[deleteAccount] bildirim silme hatası:', e) }
+
+  // 5) teacherApprovals varsa sil — ayrı işlem
+  try {
+    await dd(d(fdb, 'teacherApprovals', uid))
+  } catch { /* döküman yoksa sessizce geç */ }
+
+  // 6) Firestore kullanıcı dokümanını sil
+  try {
+    await dd(d(fdb, 'users', uid))
+  } catch (e) { console.warn('[deleteAccount] kullanıcı dokümanı silme hatası:', e) }
+
+  // 7) Firebase Auth hesabını sil — bu en son yapılmalı
+  await user.delete()
 }
