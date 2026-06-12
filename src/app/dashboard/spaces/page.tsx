@@ -4,14 +4,14 @@ import React, { useState, useMemo, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { useSpaces } from '@/hooks/useSpaces'
+import { useMemberships } from '@/hooks/useMemberships'
 import { useAuthStore } from '@/store/authStore'
 import { useUserProfile } from '@/hooks/useUserProfile'
-import { createSpace, updateSpace, deleteSpace } from '@/lib/firestore'
+import { createSpace, updateSpace, deleteSpace, joinSpace } from '@/lib/firestore'
 import { CHANNEL_META, cn } from '@/lib/utils'
 import { Search, Users, Menu, Plus, X, Loader2, CheckCircle, AlertCircle, Pencil, Trash2 } from 'lucide-react'
 import Link from 'next/link'
-
-const ADMIN_EMAIL = 'khalil.khattab@ogr.gelisim.edu.tr'
+import { isOwner, hasCapability } from '@/lib/permissions'
 
 const EMOJI_PICKS = ['💻','⚡','🏛️','🧬','⚖️','📡','🎨','🏗️','📊','🚀','🔬','🎓','🏥','✈️','🎭','🌐','🔧','📐']
 
@@ -152,7 +152,7 @@ function CreateSpaceModal({ onClose, onCreated }: { onClose: () => void; onCreat
     if (!user)               { setError('Oturum bulunamadı.'); return }
     setSaving(true); setError('')
     try {
-      await createSpace({
+      const newSpaceId = await createSpace({
         name:        name.trim(),
         description: description.trim(),
         iconEmoji:   emoji,
@@ -160,6 +160,8 @@ function CreateSpaceModal({ onClose, onCreated }: { onClose: () => void; onCreat
         department:  department.trim(),
         createdBy:   user.uid,
       })
+      // Oluşturan otomatik katılır (sidebar'ında görünsün) — hata olsa da akışı kesme
+      try { await joinSpace(user.uid, newSpaceId, { displayName: user.displayName ?? undefined }) } catch {}
       setDone(true)
       setTimeout(() => { onCreated(); onClose() }, 1200)
     } catch (e: any) {
@@ -299,8 +301,33 @@ function Skeleton({ className }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={`bg-surface animate-pulse rounded ${className}`} />
 }
 
+// Katıl / Ayrıl butonu (kart içinde, Link navigasyonunu tetiklemeden)
+function JoinButton({ spaceId, joined, onJoin, onLeave }: {
+  spaceId: string; joined: boolean
+  onJoin: (id: string) => Promise<void>; onLeave: (id: string) => Promise<void>
+}) {
+  const [busy, setBusy] = React.useState(false)
+  async function toggle(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation()
+    if (busy) return
+    setBusy(true)
+    try { joined ? await onLeave(spaceId) : await onJoin(spaceId) } catch {} finally { setBusy(false) }
+  }
+  return (
+    <button onClick={toggle} disabled={busy}
+      className={cn('w-full mt-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5',
+        joined ? 'bg-surface border border-surface-border text-text-muted hover:border-accent-red/40 hover:text-accent-red'
+               : 'bg-brand text-white hover:bg-brand-hover',
+        busy && 'opacity-60 cursor-not-allowed')}>
+      {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : joined ? <CheckCircle className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+      {joined ? 'Katıldın' : 'Katıl'}
+    </button>
+  )
+}
+
 export default function SpacesPage() {
   const { spaces, isLoading } = useSpaces()
+  const { isMember, join, leave } = useMemberships()
   const { user: firebaseUser }         = useAuthStore()
   const { profile }                    = useUserProfile()
   const [query,       setQuery]       = useState('')
@@ -318,14 +345,26 @@ export default function SpacesPage() {
     }
   }, [searchParams])
 
-  const isAdmin = firebaseUser?.email === ADMIN_EMAIL || profile?.role === 'admin'
-  const isMod   = profile?.role === 'moderator'
-  const canCreate = isAdmin || isMod
+  // Topluluk açma: owner / createCommunity yetkisi / global moderasyon (capability modeli)
+  const canCreate =
+    isOwner(profile, firebaseUser?.email) ||
+    hasCapability(profile, 'createCommunity', firebaseUser?.email) ||
+    hasCapability(profile, 'moderateGlobal', firebaseUser?.email) ||
+    hasCapability(profile, 'manageUsers', firebaseUser?.email)
+  // Düzenleme/silme yetkisi (mevcut admin/mod davranışı korunur)
+  const isAdmin = isOwner(profile, firebaseUser?.email) || hasCapability(profile, 'manageUsers', firebaseUser?.email)
 
-  const filtered = spaces.filter(s =>
-    s.name.toLowerCase().includes(query.toLowerCase()) ||
-    s.description?.toLowerCase().includes(query.toLowerCase())
-  )
+  // D2: TR harf duyarsız arama — ad, açıklama, bölüm ve kanal adlarında
+  const filtered = spaces.filter(s => {
+    const q = query.trim().toLocaleLowerCase('tr')
+    if (!q) return true
+    return (
+      s.name.toLocaleLowerCase('tr').includes(q) ||
+      s.description?.toLocaleLowerCase('tr').includes(q) ||
+      (s as any).department?.toLocaleLowerCase('tr').includes(q) ||
+      (s.channels ?? []).some((c: any) => c.name?.toLocaleLowerCase('tr').includes(q))
+    )
+  })
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -458,7 +497,8 @@ export default function SpacesPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filtered.map(space => (
                   <div key={space.id} className="relative group">
-                    {canCreate && (
+                    {/* Düzenle/Sil: yalnızca yönetici/owner (oluşturma yetkisi daha geniş) */}
+                    {isAdmin && (
                       <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                         <button
                           onClick={(e: any) => { e.preventDefault(); e.stopPropagation(); setEditingSpace(space) }}
@@ -508,6 +548,7 @@ export default function SpacesPage() {
                           <div className="text-2xs text-text-muted pl-3.5">+{space.channels.length - 4} kanal daha</div>
                         )}
                       </div>
+                      <JoinButton spaceId={space.id} joined={isMember(space.id)} onJoin={join} onLeave={leave} />
                     </div>
                     </Link>
                   </div>

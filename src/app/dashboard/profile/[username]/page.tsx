@@ -8,8 +8,8 @@ import { Avatar } from '@/components/ui/Avatar'
 import { useAuthStore } from '@/store/authStore'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { getUserProfile, getUserByUsername, getPostsByUser, getUserStats } from '@/lib/firestore'
-import { timeAgo, cn } from '@/lib/utils'
-import { USER_TYPE_LABELS } from '@/lib/departments'
+import { timeAgo, cn, safeAttachmentUrl } from '@/lib/utils'
+import { USER_TYPE_LABELS, TEACHER_TITLE_LABELS } from '@/lib/departments'
 import type { User, Post } from '@/types'
 import {
   ArrowLeft, Menu, MessageSquare, Eye, FileText,
@@ -49,10 +49,11 @@ function PostCard({ post, ...props }: { post: Post; [k: string]: any }) {
             </div>
           )}
         </div>
-        {post.attachments?.some((a: any) => a.type === 'image') && (
+        {/* Y-3: yalnızca Storage kaynaklı görseller */}
+        {safeAttachmentUrl(post.attachments?.find((a: any) => a.type === 'image')?.url) && (
           <div className="w-16 h-14 rounded-lg overflow-hidden border border-surface-border shrink-0">
             <img
-              src={post.attachments.find((a: any) => a.type === 'image')?.url}
+              src={safeAttachmentUrl(post.attachments.find((a: any) => a.type === 'image')?.url)!}
               alt=""
               className="w-full h-full object-cover"
             />
@@ -93,27 +94,47 @@ export default function ProfilePage() {
 
   const isOwnProfile = currentUser?.uid === profile?.uid
   const isAdmin      = myProfile?.role === 'admin' || currentUser?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL
+  const isAdminOrMod = isAdmin || myProfile?.role === 'moderator'
 
   useEffect(() => {
     if (!usernameParam) return
     setIsLoading(true)
     async function loadProfile() {
-      // Önce username ile dene
-      let p = await getUserByUsername(usernameParam)
-      // Bulamazsa uid ile dene (eski linkler için fallback)
-      if (!p) p = await getUserProfile(usernameParam)
-      if (!p) { setIsLoading(false); return }
-      setProfile(p)
-      const [ps, st] = await Promise.all([
-        getPostsByUser(p.uid),
-        getUserStats(p.uid),
-      ])
-      setPosts(ps)
-      setStats(st)
-      setIsLoading(false)
+      // Kendi profili: username'i kendi profiliyle eşleşiyorsa doğrudan kendi dokümanını kullan
+      // (listede görünmesen bile kendi profiline her zaman erişebilirsin)
+      if (myProfile && (myProfile as any).username === usernameParam) {
+        setProfile(myProfile); setIsLoading(false)
+        const [ps0, st0] = await Promise.all([getPostsByUser(myProfile.uid), getUserStats(myProfile.uid)])
+        setPosts(ps0); setStats(st0)
+        return
+      }
+      // Başkasının profili: normal kullanıcı yalnızca LİSTEDE görünenleri görebilir.
+      // Admin/moderatör listede olmayanları da görebilir (moderasyon).
+      try {
+        let p = await getUserByUsername(usernameParam, isAdminOrMod)
+        // Bulamazsa uid ile dene (eski linkler için fallback; kurallar gizliyi engeller)
+        if (!p) p = await getUserProfile(usernameParam).catch(() => null)
+        if (!p) { setProfile(null); setIsLoading(false); return }
+        // Gizli profil + yetkisiz görüntüleyen: gösterme
+        if ((p as any).isListedInDirectory === false && !isAdminOrMod && p.uid !== currentUser?.uid) {
+          setProfile(null); setIsLoading(false); return
+        }
+        setProfile(p)
+        const [ps, st] = await Promise.all([
+          getPostsByUser(p.uid),
+          getUserStats(p.uid),
+        ])
+        setPosts(ps)
+        setStats(st)
+      } catch {
+        setProfile(null)
+      } finally {
+        setIsLoading(false)
+      }
     }
     loadProfile()
-  }, [usernameParam])
+    // myProfile/isAdminOrMod async yüklenir; değişince yeniden çöz (özellikle kendi gizli profilin)
+  }, [usernameParam, myProfile?.uid, isAdminOrMod, currentUser?.uid])
 
   const roleLabel = profile?.role === 'admin'
     ? { label: 'Admin', icon: Crown, color: 'text-accent-amber', bg: 'bg-accent-amber/10 border-accent-amber/20' }
@@ -210,14 +231,27 @@ export default function ProfilePage() {
                     {(profile as any).username && (
                       <p className="text-sm text-brand font-medium mt-0.5">@{(profile as any).username}</p>
                     )}
-                    <p className="text-xs text-text-muted mt-0.5">{profile.email}</p>
+                    {/* GÜVENLİK/KVKK: e-posta yalnızca kişinin kendi profilinde gösterilir
+                        (kaynak: auth oturumu; başkalarının e-postası istemciye hiç gönderilmez) */}
+                    {isOwnProfile && currentUser?.email && (
+                      <p className="text-xs text-text-muted mt-0.5">{currentUser.email}</p>
+                    )}
+
+                    {/* Biyografi (D1) — düz metin; React zaten escape eder */}
+                    {(profile as any).bio && (
+                      <p className="text-sm text-text-secondary leading-relaxed mt-2 whitespace-pre-wrap break-words">
+                        {(profile as any).bio}
+                      </p>
+                    )}
 
                     {/* Meta bilgiler */}
                     <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5">
                       {userTypeLabel && (
                         <span className="flex items-center gap-1.5 text-xs text-text-secondary">
                           <GraduationCap className="w-3.5 h-3.5 text-text-muted" />
-                          {userTypeLabel}
+                          {(profile as any).teacherTitle
+                            ? (TEACHER_TITLE_LABELS[(profile as any).teacherTitle as keyof typeof TEACHER_TITLE_LABELS] ?? userTypeLabel)
+                            : userTypeLabel}
                         </span>
                       )}
                       {profile.fakulte && (

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { cn, timeAgo, formatFileSize, CHANNEL_META } from '@/lib/utils'
+import { cn, timeAgo, formatFileSize, CHANNEL_META, safeAttachmentUrl } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { ChannelBadge, RoleBadge } from '@/components/ui/Badge'
 import type { Post } from '@/types'
@@ -40,6 +40,10 @@ export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: 
                 <span className="text-2xs text-accent-purple bg-accent-purple/10 px-1.5 py-0.5 rounded-sm font-medium border border-accent-purple/20">Misafir</span>
               )}
               <span className="text-2xs text-text-muted">{timeAgo(post.createdAt)}</span>
+              {/* O4: gönderi tipi rozeti */}
+              {post.postKind === 'ders' && (
+                <span className="text-2xs text-accent-green bg-accent-green/10 px-1.5 py-0.5 rounded-sm font-medium border border-accent-green/20">📚 Ders</span>
+              )}
               {post.isPinned && (
                 <span className="flex items-center gap-1 text-2xs text-accent-amber">
                   <Pin className="w-2.5 h-2.5" />
@@ -97,10 +101,13 @@ export function PostCard({ post, spaceSlug, channelSlug, variant = 'default' }: 
                   const isPdf   = att.type === 'pdf'
                   const Icon    = isImage ? ImageIcon : isPdf ? FileText : File
                   const iconColor = isImage ? 'text-brand' : isPdf ? 'text-accent-red' : 'text-accent-amber'
+                  // Y-3: yalnızca Storage kaynaklı URL'ler bağlantı olur
+                  const safeUrl = safeAttachmentUrl(att.url)
+                  if (!safeUrl) return null
                   return (
                     <a
                       key={att.id}
-                      href={att.url}
+                      href={safeUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       download={!isImage}

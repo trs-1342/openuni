@@ -1,5 +1,11 @@
 // src/lib/mailer.ts — Merkezi email gönderici (server-side only)
 import nodemailer from 'nodemailer'
+import { escapeHtml } from './email-templates'
+
+// Konu satırlarından satır sonlarını temizle (header injection savunma katmanı)
+function cleanSubject(s: string): string {
+  return String(s).replace(/[\r\n]+/g, ' ').slice(0, 200)
+}
 
 function createTransporter() {
   return nodemailer.createTransport({
@@ -18,7 +24,7 @@ const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? ''
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://openigu.vercel.app'
 
 // ─── Ortak HTML wrapper ────────────────────────────────────────────────────
-function emailWrapper(title: string, body: string): string {
+export function emailWrapper(title: string, body: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#0F1117;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#0F1117;padding:32px 16px;">
     <tr><td align="center">
@@ -48,6 +54,8 @@ function emailWrapper(title: string, body: string): string {
 }
 
 // ─── 1. Admin log emaili ──────────────────────────────────────────────────
+// Y-4 (denetim): başlık/satır içerikleri istemciden gelebildiğinden (send-admin-log
+// route'u) TÜM alanlar HTML-escape edilir — admin e-postasına HTML enjeksiyonu engeli.
 export async function sendAdminLog(opts: {
   subject: string
   title: string
@@ -55,19 +63,20 @@ export async function sendAdminLog(opts: {
   level?: 'info' | 'warn' | 'error'
 }) {
   if (!ADMIN_EMAIL) return
-  const color = opts.level === 'error' ? '#EF4444' : opts.level === 'warn' ? '#F59E0B' : '#4F7EF7'
-  const badge = opts.level === 'error' ? '🔴' : opts.level === 'warn' ? '🟡' : '🔵'
+  const level = ['info', 'warn', 'error'].includes(opts.level ?? '') ? opts.level! : 'info'
+  const color = level === 'error' ? '#EF4444' : level === 'warn' ? '#F59E0B' : '#4F7EF7'
+  const badge = level === 'error' ? '🔴' : level === 'warn' ? '🟡' : '🔵'
 
-  const rows = opts.rows.map(r =>
+  const rows = (opts.rows ?? []).slice(0, 12).map(r =>
     `<tr>
-      <td style="padding:8px 0;color:#64748B;font-size:13px;width:140px;vertical-align:top;">${r.label}</td>
-      <td style="padding:8px 0;color:#E2E8F0;font-size:13px;">${r.value}</td>
+      <td style="padding:8px 0;color:#64748B;font-size:13px;width:140px;vertical-align:top;">${escapeHtml(String(r?.label ?? '').slice(0, 100))}</td>
+      <td style="padding:8px 0;color:#E2E8F0;font-size:13px;">${escapeHtml(String(r?.value ?? '').slice(0, 300))}</td>
     </tr>`
   ).join('')
 
   const body = `
-    <p style="margin:0 0 4px;font-size:11px;color:${color};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">${badge} ${(opts.level ?? 'info').toUpperCase()}</p>
-    <p style="margin:0 0 20px;font-size:20px;font-weight:700;color:#F1F5F9;">${opts.title}</p>
+    <p style="margin:0 0 4px;font-size:11px;color:${color};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">${badge} ${level.toUpperCase()}</p>
+    <p style="margin:0 0 20px;font-size:20px;font-weight:700;color:#F1F5F9;">${escapeHtml(String(opts.title).slice(0, 200))}</p>
     <div style="background:#1A2235;border-radius:10px;padding:16px;border:1px solid #1E2535;">
       <table width="100%" cellpadding="0" cellspacing="0">${rows}</table>
     </div>
@@ -78,7 +87,7 @@ export async function sendAdminLog(opts: {
   await createTransporter().sendMail({
     from: FROM,
     to: ADMIN_EMAIL,
-    subject: `[OpenUni Log] ${opts.subject}`,
+    subject: cleanSubject(`[OpenUni Log] ${opts.subject}`),
     html: emailWrapper(opts.subject, body),
   })
 }
@@ -146,8 +155,37 @@ export async function sendPostNotification(opts: {
   await createTransporter().sendMail({
     from: FROM,
     to: opts.to,
-    subject: `Paylaşımın yayınlandı: ${opts.postTitle}`,
+    subject: cleanSubject(`Paylaşımın yayınlandı: ${opts.postTitle}`),
     html: emailWrapper('Paylaşım Bildirimi', body),
+  })
+}
+
+// ─── Şablonlu e-posta (O2) ────────────────────────────────────────────────
+// Düz-metin şablon gövdesini (zaten escape edilip <br>'lenmiş HTML olarak alır)
+// standart OpenUni çerçevesine yerleştirir; istenirse aksiyon butonu ekler.
+export async function sendTemplatedEmail(opts: {
+  to: string
+  subject: string
+  bodyHtml: string            // renderTemplateHtml çıktısı (escape edilmiş)
+  button?: { label: string; url: string } | null
+}) {
+  const buttonHtml = opts.button
+    ? `<table cellpadding="0" cellspacing="0" style="margin:24px 0 0;">
+        <tr><td style="background:#4F7EF7;border-radius:8px;">
+          <a href="${opts.button.url}" style="display:inline-block;padding:12px 24px;color:#fff;font-weight:600;font-size:14px;text-decoration:none;border-radius:8px;">
+            ${opts.button.label}
+          </a>
+        </td></tr>
+      </table>`
+    : ''
+  const body = `
+    <div style="font-size:14px;color:#94A3B8;line-height:1.7;">${opts.bodyHtml}</div>
+    ${buttonHtml}`
+  await createTransporter().sendMail({
+    from: FROM,
+    to: opts.to,
+    subject: cleanSubject(opts.subject),
+    html: emailWrapper(opts.subject, body),
   })
 }
 

@@ -1,27 +1,24 @@
 'use client'
 import { useUserProfile } from '@/hooks/useUserProfile'
+import { isOwner, hasCapability } from '@/lib/permissions'
+
 export function useAccess() {
   const { profile, isLoading } = useUserProfile()
+
+  // Owner ve global moderasyon yetkisi olanlar her zaman erişir (capability modeli)
+  const owner = isOwner(profile)
+  const isAdminOrMod = owner ||
+    hasCapability(profile, 'moderateGlobal') ||
+    hasCapability(profile, 'manageUsers') ||
+    profile?.role === 'admin' ||
+    profile?.role === 'moderator'
 
   const canAccess = !isLoading &&
     profile !== null &&
     (
-      profile?.role === 'admin' ||
-      profile?.role === 'moderator' ||
+      isAdminOrMod ||
       (profile as any)?.isAdminVerified === true
     )
 
-  // DEBUG — sorunu bulduktan sonra kaldır
-  console.log('[useAccess]', {
-    isLoading,
-    profile: profile ? {
-      role: profile.role,
-      isAdminVerified: (profile as any)?.isAdminVerified,
-      email: profile.email,
-    } : null,
-    canAccess,
-  })
-
-  const isAdminOrMod = profile?.role === 'admin' || profile?.role === 'moderator'
   return { canAccess, isAdminOrMod, isLoading }
 }

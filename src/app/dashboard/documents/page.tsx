@@ -8,7 +8,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { useAuthStore } from '@/store/authStore'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { deletePost, archivePost, getSpace } from '@/lib/firestore'
-import { timeAgo, cn } from '@/lib/utils'
+import { timeAgo, cn, safeAttachmentUrl } from '@/lib/utils'
 import { getDocs, query, collection, where, orderBy, limit, getDoc, doc } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import {
@@ -273,10 +273,11 @@ export default function DocumentsPage() {
                     {/* Dosya ekleri */}
                     {post.attachments?.length > 0 && (
                       <div className="space-y-1.5 pl-9">
-                        {post.attachments.map((att: any) => (
+                        {/* Y-3: yalnızca Storage kaynaklı URL'ler bağlantı olur */}
+                        {post.attachments.filter((att: any) => safeAttachmentUrl(att.url)).map((att: any) => (
                           <a
                             key={att.id ?? att.url}
-                            href={att.url}
+                            href={safeAttachmentUrl(att.url)!}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface border border-surface-border hover:border-brand/40 hover:bg-surface-hover transition-all group"

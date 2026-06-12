@@ -9,21 +9,26 @@ import { useAuthStore } from '@/store/authStore'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import {
   getAllUsers, getAllPosts, hardDeletePost, deletePost,
-  banUser, unbanUser, muteUser, unmuteUser, setUserRole,
+  banUser, unbanUser, muteUser, unmuteUser,
   getPendingTeachers, approveTeacher, rejectTeacher,
   adminVerifyUser, adminUnverifyUser,
+  grantCapability, revokeCapability,
 } from '@/lib/firestore'
 import { timeAgo, cn } from '@/lib/utils'
+import { reauthenticate } from '@/lib/auth'
+import { CAPABILITIES, CAPABILITY_LABELS, isOwner, hasCapability, roleLabel, type Capability } from '@/lib/permissions'
+import { TEACHER_TITLE_LABELS } from '@/lib/departments'
+import { LogsTab } from '@/components/admin/LogsTab'
+import { EmailTemplatesTab } from '@/components/admin/EmailTemplatesTab'
+import { VerificationsTab } from '@/components/admin/VerificationsTab'
 import type { User, Post } from '@/types'
 import {
   ShieldAlert, Users, FileText, Image, Menu, Search,
   Ban, VolumeX, Volume2, ShieldCheck, ShieldOff, Trash2,
   AlertTriangle, CheckCircle, X, Loader2, RefreshCw,
   ChevronDown, Clock, Filter, GraduationCap, Check, XCircle,
-  Activity, Info, AlertOctagon, Terminal,
+  Activity, Mail, IdCard,
 } from 'lucide-react'
-
-const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? ''
 
 // ─── Ban/Mute Dialog ──────────────────────────────────────────────────────────
 function ModerationDialog({
@@ -110,13 +115,64 @@ function ModerationDialog({
   )
 }
 
+// ─── Yeniden Doğrulama Dialogu (hassas yetki için) ────────────────────────────
+function ReauthDialog({ target, grant, onConfirm, onClose }: {
+  target: User; grant: boolean
+  onConfirm: (password: string) => Promise<void>; onClose: () => void
+}) {
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function submit() {
+    if (!password) return
+    setBusy(true); setErr('')
+    try { await onConfirm(password) }
+    catch { setErr('Parola hatalı veya işlem başarısız.'); setBusy(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-[#131929] border border-surface-border rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="w-5 h-5 text-accent-amber" />
+          <h3 className="font-semibold text-base text-text-primary">Güvenlik doğrulaması</h3>
+        </div>
+        <p className="text-xs text-text-muted">
+          <strong className="text-text-secondary">{target.displayName}</strong> kullanıcısına
+          <strong className="text-text-secondary"> Kullanıcı Yönetimi</strong> yetkisi
+          {grant ? ' vermek' : ' kaldırmak'} üzeresin. Devam etmek için parolanı gir.
+        </p>
+        <input type="password" value={password} autoFocus
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
+          placeholder="Parolan" className="input text-sm" />
+        {err && <p className="text-2xs text-accent-red">{err}</p>}
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="btn-secondary flex-1 text-sm py-2.5">İptal</button>
+          <button onClick={submit} disabled={busy || !password}
+            className={cn('flex-1 py-2.5 text-sm font-semibold rounded-lg bg-brand text-white hover:bg-brand-hover transition-all',
+              (busy || !password) && 'opacity-60 cursor-not-allowed')}>
+            {busy ? 'Doğrulanıyor…' : 'Onayla'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Kullanıcı Satırı ─────────────────────────────────────────────────────────
-function UserRow({ user: u, onAction, currentUserUid, onResetUsername }: any) {
+function UserRow({ user: u, onAction, onCapability, currentUserUid, viewerIsOwner, onResetUsername }: any) {
   const [open, setOpen] = useState(false)
   const isBanned = u.isBanned && (!u.banUntil || new Date(u.banUntil) > new Date())
   const isMuted  = u.isMuted  && (!u.muteUntil || new Date(u.muteUntil) > new Date())
-  // isSelf: uid bazlı karşılaştırma — email veya hardcode asla kullanılmaz
-  const isSelf   = u.uid === currentUserUid || u.role === 'admin'
+  const rowIsOwner = isOwner(u, u.email)
+  const label = roleLabel(u, u.email)
+  // Kendine veya owner'a moderasyon işlemi yapılamaz
+  const isSelf   = u.uid === currentUserUid || rowIsOwner
+  // Yetki atama yalnızca owner tarafından yapılır (owner satırı hariç, kendine hariç)
+  const canManageCaps = viewerIsOwner && !rowIsOwner && u.uid !== currentUserUid
 
   return (
     <div className="border border-surface-border rounded-xl overflow-hidden">
@@ -126,14 +182,14 @@ function UserRow({ user: u, onAction, currentUserUid, onResetUsername }: any) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <p className="text-xs font-medium text-text-primary truncate">{u.displayName}</p>
-            {u.role === 'admin' && <span className="text-2xs bg-brand/10 text-brand px-1.5 py-0.5 rounded-sm font-medium">Admin</span>}
-            {u.role === 'moderator' && <span className="text-2xs bg-accent-purple/10 text-accent-purple px-1.5 py-0.5 rounded-sm font-medium">Mod</span>}
+            {label && <span className="text-2xs bg-brand/10 text-brand px-1.5 py-0.5 rounded-sm font-medium">{label}</span>}
             {isBanned && <span className="text-2xs bg-accent-red/10 text-accent-red px-1.5 py-0.5 rounded-sm font-medium">Engelli</span>}
             {isMuted  && <span className="text-2xs bg-accent-amber/10 text-accent-amber px-1.5 py-0.5 rounded-sm font-medium">Susturuldu</span>}
             {u.isAdminVerified === false && <span className="text-2xs bg-accent-amber/15 text-accent-amber border border-accent-amber/30 px-1.5 py-0.5 rounded-sm font-medium">⏳ Onay Bekliyor</span>}
             {u.isAdminVerified === true  && <span className="text-2xs bg-accent-green/10 text-accent-green px-1.5 py-0.5 rounded-sm font-medium">✓ Onaylı</span>}
           </div>
-          <p className="text-2xs text-text-muted truncate">{u.email}</p>
+          {/* E-posta yalnızca owner'a görünür (owner üstünlüğü) */}
+          <p className="text-2xs text-text-muted truncate">{viewerIsOwner ? (u.email ?? '—') : '•••••• (yalnızca sahip görür)'}</p>
         </div>
         <ChevronDown className={cn('w-4 h-4 text-text-muted transition-transform shrink-0', open && 'rotate-180')} />
       </div>
@@ -144,22 +200,26 @@ function UserRow({ user: u, onAction, currentUserUid, onResetUsername }: any) {
           <div className="grid grid-cols-2 gap-1.5 text-2xs text-text-muted">
             <div>Katılım: {u.joinedAt ? timeAgo(u.joinedAt) : '—'}</div>
             <div>Bölüm: {u.department ?? '—'}</div>
-            <div>Öğrenci no: {(u as any).studentId ?? '—'}</div>
+            <div>Öğrenci no: {viewerIsOwner ? ((u as any).studentId ?? '—') : '••••••'}</div>
             <div>Tip: {(u as any).userType ?? '—'}</div>
           </div>
+          {/* Yetkiler (capability) — yalnızca owner atayabilir */}
+          {canManageCaps && (
+            <div className="flex flex-wrap gap-1.5 pb-1">
+              {(Object.keys(CAPABILITIES) as Capability[]).map(cap => {
+                const has = Array.isArray(u.capabilities) && u.capabilities.includes(cap)
+                return (
+                  <button key={cap} onClick={() => onCapability(u, cap, !has)}
+                    className={cn('flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border transition-all',
+                      has ? 'border-brand bg-brand/10 text-brand' : 'border-surface-border text-text-muted hover:border-surface-active')}>
+                    {has ? <ShieldCheck className="w-3 h-3" /> : <ShieldOff className="w-3 h-3" />}
+                    {CAPABILITY_LABELS[cap]}
+                  </button>
+                )
+              })}
+            </div>
+          )}
           <div className="flex flex-wrap gap-1.5">
-            {/* Moderatör ata/kaldır */}
-            {u.role !== 'admin' && (
-              u.role === 'moderator'
-                ? <button onClick={() => onAction(u, 'unmod')}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-accent-purple/30 text-accent-purple hover:bg-accent-purple/10 transition-all">
-                    <ShieldOff className="w-3 h-3" />Mod Kaldır
-                  </button>
-                : <button onClick={() => onAction(u, 'mod')}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-accent-purple/30 text-accent-purple hover:bg-accent-purple/10 transition-all">
-                    <ShieldCheck className="w-3 h-3" />Mod Yap
-                  </button>
-            )}
             {/* Sustur/Kaldır - kendi hesabında gösterme */}
             {!isSelf && (isMuted
               ? <button onClick={() => onAction(u, 'unmute')}
@@ -193,12 +253,6 @@ function UserRow({ user: u, onAction, currentUserUid, onResetUsername }: any) {
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-surface-border text-text-muted hover:bg-surface transition-all">
                   <ShieldOff className="w-3 h-3" />Onayı Kaldır
                 </button>
-            )}
-            {onResetUsername && (
-              <button onClick={() => onResetUsername(u.uid)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-surface-border text-text-muted hover:bg-surface transition-all">
-                🔄 Username Sıfırla
-              </button>
             )}
           {isBanned && u.banReason && (
             <p className="text-2xs text-text-muted bg-accent-red/5 border border-accent-red/10 rounded px-2 py-1.5">
@@ -251,9 +305,7 @@ export default function AdminPage() {
   const { user: firebaseUser } = useAuthStore()
   const { profile } = useUserProfile()
 
-  const [tab,        setTab]        = useState<'users' | 'posts' | 'teachers' | 'logs'>('users')
-  const [logs,       setLogs]       = useState<any[]>([])
-  const [logsLoading, setLogsLoading] = useState(false)
+  const [tab,        setTab]        = useState<'users' | 'posts' | 'teachers' | 'verifications' | 'templates' | 'logs'>('users')
   const [pendingTeachers, setPendingTeachers] = useState<any[]>([])
   const [teachersLoading, setTeachersLoading] = useState(false)
   const [users,      setUsers]      = useState<User[]>([])
@@ -265,10 +317,13 @@ export default function AdminPage() {
   const [dialog, setDialog] = useState<{
     user: User; action: 'ban' | 'mute' | 'unban' | 'unmute' | 'verify' | 'unverify'
   } | null>(null)
+  const [reauth, setReauth] = useState<{ u: User; cap: Capability; grant: boolean } | null>(null)
   const [roleFilter,  setRoleFilter]  = useState<'all' | 'student' | 'moderator' | 'banned' | 'muted'>('all')
   const [typeFilter,  setTypeFilter]  = useState<'all' | 'lisans' | 'onlisans' | 'ogretmen' | 'pending_teacher' | 'diger'>('all')
 
-  const isAdmin = firebaseUser?.email === ADMIN_EMAIL || profile?.role === 'admin'
+  // Owner veya kullanıcı yönetimi yetkisi olan erişebilir
+  const ownerHere = isOwner(profile, firebaseUser?.email)
+  const isAdmin = ownerHere || hasCapability(profile, 'manageUsers', firebaseUser?.email)
 
   useEffect(() => {
     if (!isAdmin && profile) { router.replace('/dashboard'); return }
@@ -282,16 +337,10 @@ export default function AdminPage() {
     try {
       const [u, p] = await Promise.all([getAllUsers(), getAllPosts()])
       setUsers(u); setPosts(p)
+    } catch (e: any) {
+      console.error('[admin load]', e?.message)
+      showToast('Veriler yüklenemedi', 'err')
     } finally { setIsLoading(false) }
-  }
-
-    async function handleResetUsername(uid: string) {
-    try {
-      const { doc, updateDoc } = await import('firebase/firestore')
-      const { db } = await import('@/lib/firebase')
-      await updateDoc(doc(db, 'users', uid), { usernameChangesLeft: 2 })
-      load()
-    } catch (e: any) { alert(e?.message) }
   }
 
   async function loadTeachers() {
@@ -306,19 +355,6 @@ export default function AdminPage() {
     } finally { setTeachersLoading(false) }
   }
 
-  async function loadLogs() {
-    setLogsLoading(true)
-    try {
-      const { getDocs, query, collection, orderBy, limit } = await import('firebase/firestore')
-      const { db } = await import('@/lib/firebase')
-      const snap = await getDocs(query(collection(db, 'systemLogs'), orderBy('createdAt', 'desc'), limit(100)))
-      setLogs(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate?.() ?? new Date() })))
-    } catch (e: any) {
-      // systemLogs koleksiyonu henüz yoksa boş bırak
-      setLogs([])
-    } finally { setLogsLoading(false) }
-  }
-
   async function handleTeacherAction(teacher: any, action: 'approve' | 'reject') {
     try {
       if (action === 'approve') {
@@ -326,10 +362,11 @@ export default function AdminPage() {
       } else {
         await rejectTeacher(teacher.uid)
       }
-      // Email gönder
+      // Email gönder (admin auth token ile)
+      const idToken = await firebaseUser?.getIdToken().catch(() => null)
       await fetch('/api/teacher-approval', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}) },
         body: JSON.stringify({ action, email: teacher.email, displayName: teacher.displayName }),
       })
       showToast(action === 'approve' ? 'Öğretmen onaylandı ✓' : 'Başvuru reddedildi', action === 'approve' ? 'ok' : 'err')
@@ -360,16 +397,24 @@ export default function AdminPage() {
     } catch { showToast('Hata oluştu', 'err') }
   }
 
-  async function handleRoleAction(u: User, action: 'mod' | 'unmod') {
+  // Yetki (capability) ver/kaldır — yalnızca owner/manageUsers (kurallar zorlar)
+  async function doCapability(u: User, cap: Capability, grant: boolean) {
     try {
-      await setUserRole(u.uid, action === 'mod' ? 'moderator' : 'student')
-      showToast(`${u.displayName} ${action === 'mod' ? 'moderatör yapıldı' : 'moderatörlükten çıkarıldı'} ✓`)
+      const current = ((u as any).capabilities ?? []) as string[]
+      if (grant) await grantCapability(u.uid, cap, current)
+      else       await revokeCapability(u.uid, cap, current)
+      showToast(`${u.displayName}: ${CAPABILITY_LABELS[cap]} ${grant ? 'verildi' : 'kaldırıldı'} ✓`)
       await load()
-    } catch { showToast('Hata oluştu', 'err') }
+    } catch { showToast('Hata oluştu (yetkin yetmiyor olabilir)', 'err') }
   }
 
-  function handleUserAction(u: User, action: 'ban' | 'mute' | 'unban' | 'unmute' | 'mod' | 'unmod' | 'verify' | 'unverify') {
-    if (action === 'mod' || action === 'unmod') { handleRoleAction(u, action); return }
+  function handleCapability(u: User, cap: Capability, grant: boolean) {
+    // En güçlü yetki (kullanıcı yönetimi) için parola ile yeniden doğrulama iste
+    if (cap === 'manageUsers') { setReauth({ u, cap, grant }); return }
+    doCapability(u, cap, grant)
+  }
+
+  function handleUserAction(u: User, action: 'ban' | 'mute' | 'unban' | 'unmute' | 'verify' | 'unverify') {
     if (action === 'verify' || action === 'unverify') {
       ;(async () => {
         try {
@@ -384,9 +429,13 @@ export default function AdminPage() {
     setDialog({ user: u, action })
   }
 
-  // Filtre + arama
+  // Filtre + arama (D2: kullanıcı adıyla da aranır; TR harf duyarsız)
   const filteredUsers = users.filter((u: any) => {
-    const matchSearch = !search || u.displayName.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
+    const q = search.trim().replace(/^@/, '').toLocaleLowerCase('tr')
+    const matchSearch = !q
+      || (u.displayName ?? '').toLocaleLowerCase('tr').includes(q)
+      || (u.username ?? '').toLowerCase().includes(q)
+      || (u.email ?? '').toLowerCase().includes(q)
     const now = new Date()
     const matchFilter =
       roleFilter === 'all'       ? true :
@@ -442,6 +491,19 @@ export default function AdminPage() {
         />
       )}
 
+      {reauth && (
+        <ReauthDialog
+          target={reauth.u} grant={reauth.grant}
+          onClose={() => setReauth(null)}
+          onConfirm={async (password) => {
+            await reauthenticate(password)            // parola yanlışsa burada hata fırlatır
+            const { u, cap, grant } = reauth
+            setReauth(null)
+            await doCapability(u, cap, grant)
+          }}
+        />
+      )}
+
       <main className="flex-1 overflow-y-auto pb-24 lg:pb-6">
         {/* Mobile header */}
         <div className="lg:hidden sticky top-0 z-20 glass border-b border-surface-border px-4 py-3 flex items-center gap-3">
@@ -488,17 +550,20 @@ export default function AdminPage() {
           </div>
 
           {/* Tab seçici */}
-          <div className="flex gap-1 bg-surface border border-surface-border rounded-lg p-1">
+          <div className="flex gap-1 bg-surface border border-surface-border rounded-lg p-1 flex-wrap">
             {[
-              { id: 'users',    icon: Users,          label: 'Kullanıcılar' },
-              { id: 'posts',    icon: FileText,        label: 'Gönderiler' },
-              { id: 'teachers', icon: GraduationCap,  label: `Öğretmen Onayı${pendingTeachers.length > 0 ? ` (${pendingTeachers.length})` : ''}` },
-              { id: 'logs',     icon: Activity,         label: 'Sistem Logları' },
+              { id: 'users',         icon: Users,          label: 'Kullanıcılar' },
+              { id: 'posts',         icon: FileText,        label: 'Gönderiler' },
+              { id: 'teachers',      icon: GraduationCap,  label: `Öğretmen${pendingTeachers.length > 0 ? ` (${pendingTeachers.length})` : ''}` },
+              { id: 'verifications', icon: IdCard,         label: 'Doğrulama' },
+              { id: 'templates',     icon: Mail,           label: 'E-posta Şablonları' },
+              // Sistem Logları YALNIZCA owner'a görünür (owner üstünlüğü)
+              ...(ownerHere ? [{ id: 'logs', icon: Activity, label: 'Loglar' }] : []),
             ].map(t => {
               const Icon = t.icon
               return (
                 <button key={t.id} onClick={() => setTab(t.id as any)}
-                  className={cn('flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded text-xs font-medium transition-all',
+                  className={cn('flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded text-xs font-medium transition-all whitespace-nowrap',
                     tab === t.id ? 'bg-brand text-white' : 'text-text-muted hover:text-text-secondary hover:bg-surface-hover')}>
                   <Icon className="w-3.5 h-3.5" />{t.label}
                 </button>
@@ -506,14 +571,16 @@ export default function AdminPage() {
             })}
           </div>
 
-          {/* Arama */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-            <input type="text" value={search} onChange={(e: any) => setSearch(e.target.value)}
-              placeholder={tab === 'users' ? 'İsim veya e-posta ara...' : 'Başlık veya yazar ara...'}
-              className="input pl-10" />
-            {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"><X className="w-4 h-4" /></button>}
-          </div>
+          {/* Arama (kullanıcı/gönderi sekmeleri) */}
+          {(tab === 'users' || tab === 'posts') && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+              <input type="text" value={search} onChange={(e: any) => setSearch(e.target.value)}
+                placeholder={tab === 'users' ? 'İsim, kullanıcı adı veya e-posta ara...' : 'Başlık veya yazar ara...'}
+                className="input pl-10" />
+              {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"><X className="w-4 h-4" /></button>}
+            </div>
+          )}
 
           {/* Kullanıcı filtre çipleri */}
           {tab === 'users' && (
@@ -572,7 +639,7 @@ export default function AdminPage() {
               {filteredUsers.length === 0
                 ? <div className="text-center py-8 text-text-muted text-sm">Sonuç bulunamadı.</div>
                 : filteredUsers.map((u: any) => (
-                    <UserRow key={u.uid} user={u} onAction={handleUserAction} currentUserUid={firebaseUser?.uid} onResetUsername={handleResetUsername} />
+                    <UserRow key={u.uid} user={u} onAction={handleUserAction} onCapability={handleCapability} currentUserUid={firebaseUser?.uid} viewerIsOwner={ownerHere} />
                   ))
               }
             </div>
@@ -588,53 +655,14 @@ export default function AdminPage() {
               }
             </div>
           ) : tab === 'logs' ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-text-muted">{logs.length} log kaydı</p>
-                <button onClick={loadLogs} disabled={logsLoading}
-                  className="text-xs text-text-muted hover:text-text-secondary flex items-center gap-1">
-                  <RefreshCw className={cn('w-3 h-3', logsLoading && 'animate-spin')} />Yenile
-                </button>
-              </div>
-              {logsLoading ? (
-                <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 text-brand animate-spin" /></div>
-              ) : logs.length === 0 ? (
-                <div className="text-center py-12 card">
-                  <Terminal className="w-8 h-8 text-text-muted mx-auto mb-3" />
-                  <p className="text-sm text-text-secondary font-medium">Log kaydı yok</p>
-                  <p className="text-xs text-text-muted mt-1">Sistem olayları burada görünecek</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {logs.map((log: any) => {
-                    const isError = log.level === 'error'
-                    const isWarn  = log.level === 'warn'
-                    const Icon = isError ? AlertOctagon : isWarn ? AlertTriangle : Info
-                    const color = isError ? 'text-accent-red' : isWarn ? 'text-accent-amber' : 'text-accent-blue'
-                    const bg    = isError ? 'bg-accent-red/5 border-accent-red/20' : isWarn ? 'bg-accent-amber/5 border-accent-amber/20' : 'bg-surface border-surface-border'
-                    return (
-                      <div key={log.id} className={cn('rounded-xl border p-3 space-y-1.5', bg)}>
-                        <div className="flex items-start gap-2">
-                          <Icon className={cn('w-3.5 h-3.5 mt-0.5 shrink-0', color)} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-text-primary">{log.message}</p>
-                            {log.details && (
-                              <p className="text-2xs text-text-muted mt-0.5 font-mono break-all">{typeof log.details === 'object' ? JSON.stringify(log.details) : log.details}</p>
-                            )}
-                          </div>
-                          <span className="text-2xs text-text-muted shrink-0 ml-2">{log.createdAt?.toLocaleTimeString?.('tr-TR') ?? ''}</span>
-                        </div>
-                        <div className="flex items-center gap-2 pt-1 border-t border-surface-border/50">
-                          {log.userEmail && <span className="text-2xs bg-surface border border-surface-border rounded px-1.5 py-0.5 text-text-muted">{log.userEmail}</span>}
-                          {log.source && <span className="text-2xs bg-surface border border-surface-border rounded px-1.5 py-0.5 text-text-muted font-mono">{log.source}</span>}
-                          <span className="text-2xs text-text-muted ml-auto">{log.createdAt?.toLocaleDateString?.('tr-TR') ?? ''}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+            // O1: seviye filtresi + arama + genişletilebilir detaylar (yalnızca owner)
+            <LogsTab />
+          ) : tab === 'templates' ? (
+            // O2: e-posta şablon editörü
+            <EmailTemplatesTab />
+          ) : tab === 'verifications' ? (
+            // O5: öğrenci kartı doğrulama kuyruğu
+            <VerificationsTab onResolved={load} />
           ) : (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -663,6 +691,7 @@ export default function AdminPage() {
                         <p className="text-sm font-semibold text-text-primary">{t.displayName}</p>
                         <p className="text-xs text-text-muted mt-0.5">{t.email}</p>
                         <div className="flex flex-wrap gap-2 mt-1.5">
+                          {t.teacherTitle && <span className="text-2xs bg-brand/10 border border-brand/20 rounded px-2 py-0.5 text-brand">{TEACHER_TITLE_LABELS[t.teacherTitle as keyof typeof TEACHER_TITLE_LABELS] ?? t.teacherTitle}</span>}
                           {t.fakulte && <span className="text-2xs bg-surface border border-surface-border rounded px-2 py-0.5 text-text-muted">{t.fakulte}</span>}
                           {t.department && <span className="text-2xs bg-surface border border-surface-border rounded px-2 py-0.5 text-text-muted">{t.department}</span>}
                           <span className="text-2xs bg-accent-amber/10 border border-accent-amber/20 rounded px-2 py-0.5 text-accent-amber">Bekliyor</span>

@@ -6,14 +6,16 @@ import { usePathname, useRouter } from 'next/navigation'
 import { cn, CHANNEL_META } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { useSpaces } from '@/hooks/useSpaces'
+import { useMemberships } from '@/hooks/useMemberships'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { useAuthStore } from '@/store/authStore'
 import { useNotifications } from '@/hooks/useNotifications'
 import { logoutUser } from '@/lib/auth'
+import { isOwner, hasCapability } from '@/lib/permissions'
 import {
   Bell, ChevronDown, ChevronRight, Search, Plus,
   Home, Bookmark, Users, X, LogOut, Settings,
-  Info, BookOpen, Shield, Mail, FileText, Hash, ShieldAlert, Archive,
+  Info, BookOpen, Shield, Mail, FileText, Hash, ShieldAlert, Archive, Ticket,
 } from 'lucide-react'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Space } from '@/types'
@@ -551,6 +553,9 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
 
   const { spaces, isLoading } = useSpaces()
+  const { isMember } = useMemberships()
+  // Sol panelde YALNIZCA katıldığın topluluklar görünür (tümü "Topluluklar" sayfasında)
+  const joinedSpaces = spaces.filter(s => isMember(s.id))
   const { profile }            = useUserProfile()
   const { user: firebaseUser } = useAuthStore()
   const { unreadCount }        = useNotifications()
@@ -577,6 +582,8 @@ export function Sidebar({ onClose }: SidebarProps) {
     router.replace('/auth/login')
   }
 
+  const canInvite = isOwner(profile, firebaseUser?.email) || hasCapability(profile, 'invite', firebaseUser?.email)
+  const ownerHere = isOwner(profile, firebaseUser?.email)
   const topItems = [
     { label: 'Ana Sayfa',     href: '/dashboard',              icon: Home },
     { label: 'Bildirimler',   href: '/dashboard/notifications', icon: Bell,     badge: unreadCount },
@@ -585,6 +592,9 @@ export function Sidebar({ onClose }: SidebarProps) {
   { label: 'Kaydedilenler', href: '/dashboard/bookmarks',     icon: Bookmark },
   { label: 'Arşivlenenler',  href: '/dashboard/archived',      icon: Archive },
     { label: 'Topluluklar',   href: '/dashboard/spaces',        icon: Users },
+    ...(canInvite ? [{ label: 'Davet Et', href: '/dashboard/invite', icon: Ticket }] : []),
+    // O3: toplu e-posta paneli yalnızca owner'a görünür
+    ...(ownerHere ? [{ label: 'E-posta Paneli', href: '/dashboard/email', icon: Mail }] : []),
   ]
 
   return (
@@ -682,8 +692,16 @@ export function Sidebar({ onClose }: SidebarProps) {
               <div className="px-3 space-y-2">
                 {[1, 2, 3].map(i => <div key={i} className="h-7 bg-surface rounded animate-pulse" />)}
               </div>
+            ) : joinedSpaces.length === 0 ? (
+              <div className="px-3 py-2">
+                <p className="text-2xs text-text-muted leading-relaxed mb-2">Henüz bir topluluğa katılmadın.</p>
+                <Link href="/dashboard/spaces" onClick={onClose}
+                  className="inline-flex items-center gap-1 text-2xs font-medium text-brand hover:text-brand-hover">
+                  <Plus className="w-3 h-3" /> Toplulukları keşfet
+                </Link>
+              </div>
             ) : (
-              spaces.map(space => (
+              joinedSpaces.map(space => (
                 <SpaceSection
                   key={space.id}
                   space={space}

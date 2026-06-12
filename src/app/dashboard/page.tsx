@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { PostCard } from '@/components/posts/PostCard'
 import { Avatar } from '@/components/ui/Avatar'
 import { useSpaces } from '@/hooks/useSpaces'
+import { useMemberships } from '@/hooks/useMemberships'
 import { useRecentPosts } from '@/hooks/usePosts'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useUserProfile } from '@/hooks/useUserProfile'
@@ -106,9 +107,17 @@ export default function DashboardPage() {
   const { user: firebaseUser } = useAuthStore()
   const { profile } = useUserProfile()
   const { spaces, isLoading: spacesLoading } = useSpaces()
+  const { isMember } = useMemberships()
   const { notifications, unreadCount, markRead, markAllRead, isLoading: notifsLoading } = useNotifications()
-  const spaceIds = useMemo(() => spaces.map((s: any) => s.id), [spaces])
+  // Ana sayfa akışı YALNIZCA katıldığın toplulukların gönderilerini gösterir
+  const spaceIds = useMemo(() => spaces.filter((s: any) => isMember(s.id)).map((s: any) => s.id), [spaces, isMember])
   const { posts, isLoading: postsLoading } = useRecentPosts(spaceIds)
+  // O4: gönderi tipi filtresi (ders / sosyal / hepsi) — eski gönderiler 'sosyal' sayılır
+  const [kindFilter, setKindFilter] = useState<'all' | 'ders' | 'sosyal'>('all')
+  const visiblePosts = useMemo(() => posts.filter((p: any) =>
+    kindFilter === 'all'  ? true :
+    kindFilter === 'ders' ? p.postKind === 'ders' : p.postKind !== 'ders'
+  ), [posts, kindFilter])
 
   const displayName  = profile?.displayName ?? firebaseUser?.displayName ?? 'Kullanıcı'
   const firstName    = displayName.split(' ')[0]
@@ -202,24 +211,44 @@ export default function DashboardPage() {
 
           {/* Son Paylaşımlar */}
           <section>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
               <h2 className="text-sm font-semibold text-text-secondary flex items-center gap-2">
                 <TrendingUp className="w-3.5 h-3.5 text-brand" /> Son Paylaşımlar
               </h2>
+              {/* O4: ders/sosyal filtresi */}
+              <div className="flex items-center gap-1">
+                {([
+                  { id: 'all',    label: 'Hepsi' },
+                  { id: 'ders',   label: '📚 Ders' },
+                  { id: 'sosyal', label: '🎉 Sosyal' },
+                ] as const).map(f => (
+                  <button key={f.id} onClick={() => setKindFilter(f.id)}
+                    className={`px-2.5 py-1 rounded-full text-2xs border transition-all ${
+                      kindFilter === f.id
+                        ? 'bg-brand/10 border-brand text-brand'
+                        : 'border-surface-border text-text-muted hover:border-surface-active'}`}>
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             </div>
             {postsLoading ? (
               <div className="space-y-3">
                 {[1,2,3].map(i => <Skeleton key={i} className="h-28" />)}
               </div>
-            ) : posts.length === 0 ? (
+            ) : visiblePosts.length === 0 ? (
               <div className="text-center py-12 card">
                 <div className="text-3xl mb-2">📭</div>
-                <p className="text-sm text-text-secondary font-medium">Henüz paylaşım yok</p>
-                <p className="text-xs text-text-muted mt-1">Toplulukları keşfet ve ilk paylaşımı yap!</p>
+                <p className="text-sm text-text-secondary font-medium">
+                  {posts.length > 0 ? 'Bu filtreye uyan paylaşım yok' : 'Henüz paylaşım yok'}
+                </p>
+                <p className="text-xs text-text-muted mt-1">
+                  {posts.length > 0 ? 'Farklı bir filtre dene' : 'Toplulukları keşfet ve ilk paylaşımı yap!'}
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
-                {posts.map((post: any) => {
+                {visiblePosts.map((post: any) => {
                   const { spaceSlug, channelSlug } = getChannelSlug(post)
                   return <PostCard key={post.id} post={post} spaceSlug={spaceSlug} channelSlug={channelSlug} />
                 })}

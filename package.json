@@ -6,13 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:rules": "firebase emulators:exec --project demo-openuni --only firestore,storage \"vitest run --config vitest.rules.config.ts\"",
+    "test": "npm run test:unit && npm run test:rules"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "firebase": "^11.10.0",
+    "firebase-admin": "^14.0.0",
     "framer-motion": "^11.18.2",
     "lucide": "^0.577.0",
     "lucide-react": "^0.475.0",
@@ -26,6 +30,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
     "@types/node": "^20",
     "@types/nodemailer": "^7.0.11",
     "@types/react": "^19.0.0",
@@ -33,8 +38,10 @@
     "autoprefixer": "^10.4.20",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.2.4",
+    "firebase-tools": "^15.20.0",
     "postcss": "^8",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.1.9"
   }
 }

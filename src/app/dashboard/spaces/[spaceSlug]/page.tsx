@@ -4,10 +4,12 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Sidebar } from '@/components/layout/Sidebar'
-import { getSpaceBySlug, updateChannel, deleteChannel, getChannelPostCount, addChannel } from '@/lib/firestore'
-import { CHANNEL_META, cn } from '@/lib/utils'
+import { getSpaceBySlug, updateChannel, deleteChannel, getChannelPostCount, addChannel, getSpaceMembers, type SpaceMemberRow } from '@/lib/firestore'
+import { CHANNEL_META, cn, timeAgo } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
 import { useUserProfile } from '@/hooks/useUserProfile'
+import { isOwner, hasCapability } from '@/lib/permissions'
+import { Avatar } from '@/components/ui/Avatar'
 import { Menu, Users, ChevronRight, ArrowLeft, Pencil, Trash2, X, Check, Loader2, Plus } from 'lucide-react'
 import type { Space } from '@/types'
 
@@ -133,12 +135,17 @@ export default function SpacePage() {
   const [deletingId,  setDeletingId]  = useState<string | null>(null)
   const [saving,      setSaving]      = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
+  const [showMembers, setShowMembers] = useState(false)
+  const [members,     setMembers]     = useState<SpaceMemberRow[] | null>(null)
   const { user: firebaseUser } = useAuthStore()
   const { profile } = useUserProfile()
-  const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? ''
-  const isAdmin   = firebaseUser?.email === ADMIN_EMAIL || profile?.role === 'admin'
-  const isMod     = profile?.role === 'moderator'
-  const canManage = isAdmin || isMod
+  const owner     = isOwner(profile, firebaseUser?.email)
+  const isAdmin   = owner || hasCapability(profile, 'manageUsers', firebaseUser?.email)
+  const isMod     = isAdmin || hasCapability(profile, 'moderateGlobal', firebaseUser?.email)
+  const canManage = isMod
+  // Topluluğu oluşturan kişi de üye listesini görebilir (gizli üyeler dahil)
+  const isSpaceCreator = !!space && space.createdBy === firebaseUser?.uid
+  const canViewMembers = isMod || isSpaceCreator
 
   const loadSpace = useCallback(async () => {
     const s = await getSpaceBySlug(params.spaceSlug)
@@ -185,6 +192,39 @@ export default function SpacePage() {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <div className="hidden lg:block"><Sidebar /></div>
+
+      {/* Üye listesi modalı — topluluk sahibi/mod görür (gizli üyeler dahil) */}
+      {showMembers && space && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowMembers(false)} />
+          <div className="relative bg-[#131929] border border-surface-border rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between p-4 border-b border-surface-border">
+              <h3 className="font-semibold text-text-primary flex items-center gap-2">
+                <Users className="w-4 h-4 text-brand" /> Üyeler ({space.memberCount})
+              </h3>
+              <button onClick={() => setShowMembers(false)} className="text-text-muted hover:text-text-secondary"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {members === null ? (
+                <div className="p-6 text-center text-text-muted text-sm">Yükleniyor…</div>
+              ) : members.length === 0 ? (
+                <div className="p-6 text-center text-text-muted text-sm">Henüz üye yok.</div>
+              ) : (
+                members.map(m => (
+                  <div key={m.uid} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-surface">
+                    <Avatar name={m.displayName ?? '?'} src={m.avatarUrl} size="sm" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-text-primary truncate">{m.displayName ?? 'Kullanıcı'}</p>
+                      {m.username && <p className="text-2xs text-text-muted truncate">@{m.username}</p>}
+                    </div>
+                    <span className="text-2xs text-text-muted shrink-0">{timeAgo(m.joinedAt)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {drawerOpen && (
         <>
@@ -239,9 +279,17 @@ export default function SpacePage() {
                     <h1 className="font-display font-bold text-text-primary text-xl">{space.name}</h1>
                     <p className="text-sm text-text-secondary mt-1 leading-relaxed">{space.description}</p>
                     <div className="flex items-center gap-3 mt-3">
-                      <span className="flex items-center gap-1.5 text-xs text-text-muted">
-                        <Users className="w-3.5 h-3.5" />{space.memberCount} üye
-                      </span>
+                      {canViewMembers ? (
+                        <button
+                          onClick={async () => { setShowMembers(true); if (!members) { try { setMembers(await getSpaceMembers(space.id)) } catch { setMembers([]) } } }}
+                          className="flex items-center gap-1.5 text-xs text-text-muted hover:text-brand transition-colors">
+                          <Users className="w-3.5 h-3.5" />{space.memberCount} üye
+                        </button>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-xs text-text-muted">
+                          <Users className="w-3.5 h-3.5" />{space.memberCount} üye
+                        </span>
+                      )}
                       <span className="flex items-center gap-1.5 text-xs text-text-muted">
                         📌 {space.channels.length} kanal
                       </span>

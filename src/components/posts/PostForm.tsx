@@ -173,6 +173,11 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
   const [showPreview, setShowPreview]   = useState(false)
   const [submitted, setSubmitted]       = useState(false)
 
+  // Gönderi tipi (O4): ders içeriği mi? Akademik/arşiv/duyuru kanallarında varsayılan açık.
+  const [isCourseContent, setIsCourseContent] = useState(
+    channel.type === 'academic' || channel.type === 'archive' || channel.type === 'announcement'
+  )
+
   // Poll state
   const [hasPoll, setHasPoll]           = useState(false)
   const [pollOptions, setPollOptions]   = useState(['', ''])
@@ -277,6 +282,7 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
         tags: values.tags,
         attachments,
         isAnnouncement: channel.type === 'announcement',
+        postKind: isCourseContent ? 'ders' : 'sosyal',
         ...(poll ? { poll } : {}),
       }, profile ?? undefined)
 
@@ -465,6 +471,23 @@ export function PostForm({ channel, spaceSlug, spaceId, onCancel }: PostFormProp
             />
           </div>
         )}
+
+        {/* Gönderi tipi (O4): ders içeriği / sosyal — anasayfa filtresinde kullanılır */}
+        <div className="border border-surface-border rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-text-secondary">📚 Bu bir ders içeriği mi?</p>
+            <p className="text-2xs text-text-muted mt-0.5">
+              İşaretliyse gönderi <strong>ders/eğitim</strong>, değilse <strong>sosyal</strong> olarak etiketlenir.
+            </p>
+          </div>
+          <button type="button" onClick={() => setIsCourseContent(p => !p)}
+            role="switch" aria-checked={isCourseContent}
+            className={cn('w-9 h-5 rounded-full transition-colors relative flex-shrink-0',
+              isCourseContent ? 'bg-brand' : 'bg-surface-border')}>
+            <span className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all',
+              isCourseContent ? 'left-4' : 'left-0.5')} />
+          </button>
+        </div>
 
         {/* Anket */}
         <div className="border border-surface-border rounded-xl overflow-hidden">

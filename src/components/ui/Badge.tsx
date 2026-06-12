@@ -19,20 +19,21 @@ export function ChannelBadge({ type, className, showLabel = true }: ChannelBadge
 }
 
 interface RoleBadgeProps {
-  role: 'student' | 'moderator' | 'admin'
+  role: 'student' | 'moderator' | 'admin' | 'owner'
   className?: string
 }
 
 export function RoleBadge({ role, className }: RoleBadgeProps) {
-  const map = {
+  const map: Record<string, { label: string; className: string }> = {
     student: { label: 'Öğrenci', className: 'bg-surface text-text-muted' },
     moderator: { label: 'Moderatör', className: 'bg-accent-amber/10 text-accent-amber' },
-    admin: { label: 'Admin', className: 'bg-accent-red/10 text-accent-red' },
+    admin: { label: 'Yönetici', className: 'bg-accent-red/10 text-accent-red' },
+    owner: { label: 'Sistem Sahibi', className: 'bg-brand/10 text-brand' },
   }
-  const { label, className: cls } = map[role]
+  const entry = map[role] ?? map.student
   return (
-    <span className={cn('badge', cls, className)}>
-      {label}
+    <span className={cn('badge', entry.className, className)}>
+      {entry.label}
     </span>
   )
 }

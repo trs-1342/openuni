@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
-import { storage } from '@/lib/firebase'
+import { storage, auth } from '@/lib/firebase'
 import { formatFileSize } from '@/lib/utils'
 
 export type UploadStatus = 'idle' | 'uploading' | 'done' | 'error'
@@ -87,9 +87,21 @@ export function useFileUpload(uploadPath = 'posts') {
 
   function startUpload(entry: UploadedFile) {
     const safeName    = entry.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const storagePath = `${uploadPath}/${Date.now()}_${safeName}`
+    // SR-4 (denetim): yükleme YOLU kullanıcıya sabitlenir — posts/{uid}/...
+    // Böylece kimse başkasının dosya yoluna yazıp/üzerine yazıp içeriği değiştiremez
+    // (Storage'da overwrite=create olduğundan create/update ayrımı koruma sağlamıyordu).
+    const owner       = auth.currentUser?.uid
+    if (!owner) {
+      setFiles(prev => prev.map(f => f.id === entry.id
+        ? { ...f, status: 'error', error: 'Yükleme için oturum gerekli.' } : f))
+      return
+    }
+    // uploadPath'in grup bilgisi (spaceId/channelId) yola dahil edilir ama uid ÖNCE gelir
+    const group       = uploadPath.replace(/^posts\/?/, '').replace(/[^a-zA-Z0-9/_-]/g, '') || 'misc'
+    const storagePath = `posts/${owner}/${group}/${Date.now()}_${safeName}`
     const storageRef  = ref(storage, storagePath)
-    const uploadTask  = uploadBytesResumable(storageRef, entry.file)
+    const uploadTask  = uploadBytesResumable(storageRef, entry.file,
+      { customMetadata: { owner } })
 
     setFiles(prev =>
       prev.map(f => f.id === entry.id ? { ...f, status: 'uploading', storagePath } : f)

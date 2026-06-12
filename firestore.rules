@@ -19,18 +19,68 @@ service cloud.firestore {
     function getUserRole() {
       return getUserData().role;
     }
+    // ─── Yetki (capability) modeli ──────────────────────────────────────────
+    // Owner: sabit e-posta çapası VEYA role=='owner'. İstemciden asla atanamaz.
+    function ownerEmail() {
+      return 'khalil.khattab@ogr.gelisim.edu.tr';
+    }
+    function isOwner() {
+      // PERFORMANS: tek get(). Owner = sabit e-posta çapası VEYA isSystemOwner bayrağı.
+      // DENETİM (emulator): eksik alana dayanıklı — d.get('isSystemOwner', false). Aksi
+      // halde alanı olmayan dokümanlarda "Property undefined" hatası kuralı çökertiyordu.
+      return isSignedIn() && (
+        request.auth.token.email == ownerEmail() ||
+        getUserData().get('isSystemOwner', false) == true
+      );
+    }
+    // Belirli bir yetkiye sahip mi? Owner her zaman sahiptir.
+    // Geriye dönük: eski admin/moderator rolleri ilgili yetkilere haritalanır.
+    // PERFORMANS: getUserData() bir kez okunur (let) — get() limitini aşmamak için.
+    function hasCap(c) {
+      return isSignedIn() && hasCapWith(getUserData(), c);
+    }
+    // DENETİM: tüm opsiyonel alan erişimleri .get(key, default) ile — çoğu kullanıcı
+    // dokümanında isSystemOwner/capabilities yoktur; doğrudan erişim kuralı çökertirdi.
+    function hasCapWith(d, c) {
+      return request.auth.token.email == ownerEmail() ||
+        d.get('isSystemOwner', false) == true ||
+        (c in d.get('capabilities', [])) ||
+        (c == 'moderateGlobal' && d.get('role', '') in ['moderator', 'admin']) ||
+        (c == 'manageUsers'    && d.get('role', '') == 'admin');
+    }
+    // Tek get() ile kontrol. Yönetim (manageUsers) moderasyonu da kapsar.
     function isModerator() {
-      return isSignedIn() && getUserRole() in ['moderator', 'admin'];
+      return isSignedIn() && isModeratorWith(getUserData());
+    }
+    function isModeratorWith(d) {
+      return hasCapWith(d, 'moderateGlobal') || hasCapWith(d, 'manageUsers');
     }
     function isAdmin() {
-      return isSignedIn() && getUserRole() == 'admin';
+      return isSignedIn() && hasCapWith(getUserData(), 'manageUsers');
     }
-    // Okuma izni: onaylı kullanıcılar
+    // Hedef doküman owner'a mı ait? (owner'ı moderasyon/yönetimden korumak için)
+    // DENETİM (emulator): eksik alana dayanıklı — normal kullanıcı (isSystemOwner yok)
+    // hedef alındığında doğrudan erişim kuralı çöküp admin moderasyonunu reddediyordu.
+    function targetIsOwner() {
+      return resource.data.get('isSystemOwner', false) == true;
+    }
+    // K-1 (denetim): banlı/susturulmuş kullanıcı içerik ÜRETEMEZ — istemci (createPost)
+    // banı kontrol etse de doğrudan SDK çağrısı bunu atlayabiliyordu; kural seviyesinde
+    // de zorlanır. Süreli ban/mute: banUntil/muteUntil geçmişse engel kalkar.
+    // (MapValue.get(key, default) ile alan yokluğuna dayanıklı.)
+    function notSilenced() {
+      let d = getUserData();
+      return !(d.get('isBanned', false) == true
+                && (d.get('banUntil', null) == null || d.get('banUntil', null) > request.time))
+          && !(d.get('isMuted', false) == true
+                && (d.get('muteUntil', null) == null || d.get('muteUntil', null) > request.time));
+    }
+    // Okuma izni: onaylı kullanıcılar (DENETİM: isAdminVerified eksik alana dayanıklı)
     function isApprovedUser() {
       return isSignedIn() && (
         isStudentEmail() ||
         isModerator() ||
-        getUserData().isAdminVerified == true
+        getUserData().get('isAdminVerified', false) == true
       );
     }
     // Yazma izni: email doğrulanmış VEYA admin/mod VEYA admin-onaylı
@@ -38,39 +88,211 @@ service cloud.firestore {
       return isSignedIn() && (
         isVerified() ||
         isModerator() ||
-        getUserData().isAdminVerified == true
+        getUserData().get('isAdminVerified', false) == true
       );
     }
 
     // ─── Users ────────────────────────────────────────────────────────────────
+    // Kullanıcının KENDİ dokümanında ASLA değiştiremeyeceği alanlar.
+    // Bu alanlar yalnızca moderatör/admin tarafından (ayrı kuralla) değiştirilebilir.
+    // Not: 'email' bilinçli olarak listede DEĞİL — artık ana dokümanda güvenlik için
+    // kullanılmıyor (kimlik request.auth.token.email'den gelir) ve hassas e-posta
+    // users/{uid}/private/contact'a taşınıyor. Migrasyonun ana dokümandan email'i
+    // silebilmesi için korumalı sayılmaz.
+    function protectedUserFields() {
+      return ['role', 'capabilities', 'isSystemOwner', 'isAdminVerified', 'isBanned', 'isMuted',
+              'banReason', 'muteReason', 'banUntil', 'muteUntil',
+              'uid', 'teacherApproved', 'teacherTitle'];
+    }
+    // Kullanıcı kendi userType'ını öğretmene/akademisyene YÜKSELTEMEZ (taklit engeli);
+    // öğretmenlik yalnızca kayıt+onay ile gelir. Öğrenci tipleri arası geçişe izin var.
+    function selfUserTypeSafe() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['userType'])
+        || !(request.resource.data.userType in ['ogretmen', 'pending_teacher']);
+    }
+    // create sırasında korumalı alanlar yalnızca güvenli varsayılan değerlerle yazılabilir
+    // SR-5 (denetim): selfUserTypeSafe/teacherTitle yalnızca UPDATE'te zorlanıyordu;
+    // kayıt (create) anında kullanıcı kendini onaysız 'ogretmen'+teacherApproved yapabiliyordu
+    // (taklit). Create'te de öğretmen onayı engellenir — öğretmenlik yalnızca pending → admin onay.
+    function createUserFieldsSafe() {
+      let d = request.resource.data;
+      return d.role == 'student'
+        && d.isAdminVerified == false
+        && d.isBanned == false
+        && d.isMuted == false
+        && d.uid == request.auth.uid
+        && d.get('userType', 'lisans') != 'ogretmen'
+        && (!('teacherApproved' in d) || d.teacherApproved != true)
+        && (!('capabilities' in d) || d.capabilities.size() == 0)
+        && (!('isSystemOwner' in d) || d.isSystemOwner == false);
+    }
+    // Y-1 (denetim): username standardı — küçük harf/rakam başlar-biter, 3-30 karakter.
+    function usernameFormatOk(u) {
+      return u is string && u.size() >= 3 && u.size() <= 30
+        && u.matches('[a-z0-9]([a-z0-9._-]*[a-z0-9])?');
+    }
+    // Y-1 (denetim): username KALICIDIR — bir kez atandıktan sonra istemciden değiştirilemez
+    // (keyfi değişim / başkasının adını alma / rezervasyon bypass'ı engeli).
+    // İlk atama (eski hesaplarda alan yoksa) standart formata uymak şartıyla serbest;
+    // format migrasyonu sunucu tarafında (/api/normalize-username, admin SDK) yapılır.
+    function usernameLockSafe() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['username'])
+        || ((!('username' in resource.data)
+             || resource.data.username == null
+             || resource.data.username == '')
+            && usernameFormatOk(request.resource.data.username));
+    }
+    // Biyografi (D1): düz metin, max 500 karakter; link/HTML reddedilir.
+    // ((?s) → . satır sonlarını da kapsar; çok satırlı bypass engeli)
+    function bioValueSafe(d) {
+      return !('bio' in d) || (
+        d.bio is string
+        && d.bio.size() <= 500
+        && !d.bio.matches('(?s).*(https?://|www\\.|[<>]).*')
+      );
+    }
+    // update sırasında korumalı alanların HİÇBİRİ değişmemeli
+    function updateKeepsProtectedFields() {
+      return !request.resource.data.diff(resource.data)
+                .affectedKeys().hasAny(protectedUserFields());
+    }
+    function onlyAffects(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && request.auth.uid == userId;
-      allow update: if isModerator();
-      allow delete: if isSignedIn() && request.auth.uid == userId;
+      // GİZLİLİK: kullanıcı dokümanı yalnızca listede görünenler için, sahibine ve moderatöre okunabilir.
+      // Böylece "dizinde görünme" kapatıldığında profil enumerasyonu (username tahmini) ve
+      // toplu veri çekme engellenir.
+      allow read: if isSignedIn() && (
+        resource.data.isListedInDirectory == true ||
+        request.auth.uid == userId ||
+        isModerator()
+      );
+      // Kendi dokümanını oluşturma: korumalı alanlar güvenli varsayılanlarda olmalı
+      // + username standart formatta olmalı (Y-1)
+      allow create: if isSignedIn() && request.auth.uid == userId && createUserFieldsSafe()
+        && bioValueSafe(request.resource.data)
+        && (!('username' in request.resource.data) || usernameFormatOk(request.resource.data.username));
+      // Kendi dokümanını güncelleme: korumalı alanlara dokunamaz + öğretmenliğe yükselemez
+      // + bio standartlara uygun olmalı (D1) + username kalıcı (Y-1)
+      allow update: if isSignedIn() && request.auth.uid == userId
+        && updateKeepsProtectedFields() && selfUserTypeSafe()
+        && bioValueSafe(request.resource.data)
+        && usernameLockSafe();
+      // Moderasyon yetkisi (moderateGlobal): yalnızca ban/mute alanlarını değiştirebilir.
+      // Owner hesabı moderasyondan KORUNUR (rogue moderatör owner'ı ban'layamaz).
+      allow update: if hasCap('moderateGlobal') && !targetIsOwner() && onlyAffects(
+        ['isBanned', 'isMuted', 'banReason', 'muteReason', 'banUntil', 'muteUntil']);
+      // Kullanıcı yönetimi yetkisi (manageUsers): yetki/onay verebilir (rol HARİÇ).
+      // Owner hesabının yetkilerine dokunamaz. userType: öğretmen onay/ret akışı için.
+      allow update: if hasCap('manageUsers') && !targetIsOwner() && onlyAffects(
+        ['capabilities', 'isAdminVerified', 'teacherApproved', 'userType']);
+      // Owner: her şeyi değiştirebilir (rol atama dahil)
+      allow update: if isOwner();
+      // K-1 (denetim): banlı/susturulmuş kullanıcı dokümanını SİLEMEZ — aksi halde
+      // dokümanı silip temiz varsayılanlarla yeniden oluşturarak banı bypass edebilirdi.
+      allow delete: if isSignedIn() && request.auth.uid == userId
+        && resource.data.isBanned != true && resource.data.isMuted != true;
+
+      // ─── Hassas iletişim verisi (e-posta, öğrenci no) ───────────────────────
+      // KVKK + owner üstünlüğü: e-postaları YALNIZCA sahibi ve OWNER görür.
+      // Moderatör/yönetici dahil hiç kimse başkasının e-postasını okuyamaz.
+      match /private/{docId} {
+        allow read, write: if isSignedIn() && (request.auth.uid == userId || isOwner());
+      }
+    }
+
+    // Topluluğu oluşturan kişi mi? (topluluk sahibi yetkileri için)
+    function isSpaceCreator(spaceId) {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/spaces/$(spaceId)).data.createdBy == request.auth.uid;
     }
 
     // ─── Spaces ───────────────────────────────────────────────────────────────
     match /spaces/{spaceId} {
       allow read: if isApprovedUser();
-      allow create: if isModerator();
+      // Topluluk açma: global moderasyon VEYA createCommunity yetkisi (owner dahil).
+      // SR-3 (denetim): oluşturan kendini createdBy yazmalı (başkası adına topluluk engeli).
+      allow create: if (isModerator() || hasCap('createCommunity'))
+        && request.resource.data.createdBy == request.auth.uid;
+      // Üyelik sayacı: onaylı kullanıcı yalnızca memberCount'u ±1 değiştirebilir (katıl/ayrıl)
+      allow update: if isApprovedUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount'])
+        && (request.resource.data.memberCount == resource.data.memberCount + 1
+            || request.resource.data.memberCount == resource.data.memberCount - 1);
+      // Topluluk sahibi kendi topluluğunu yönetir (kanal ekleme/düzenleme, ayar).
+      // (createSpace'in kanal-spaceId güncellemesi ve sahip kanal yönetimi bunu gerektirir;
+      //  createdBy kuralda kilitli — protectedSpaceCreator ile değiştirilemez.)
+      allow update: if isSignedIn()
+        && resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdBy == resource.data.createdBy;
       allow update: if isModerator();
       allow delete: if isAdmin();
+    }
+
+    // ─── Memberships (topluluk üyeliği) ─────────────────────────────────────────
+    // Doküman id formatı: {uid}_{spaceId}. Kullanıcı yalnızca kendi üyeliğini kurar/siler.
+    match /memberships/{mid} {
+      allow read: if isSignedIn() && (
+        resource.data.uid == request.auth.uid ||      // kendi üyeliğim
+        isModerator() ||                              // global mod/owner
+        isSpaceCreator(resource.data.spaceId)         // topluluğu oluşturan, üyelerini görür (gizli olsa bile)
+      );
+      // O-9 (denetim): snapshot'taki username kişinin GERÇEK username'i olmalı
+      // (üye listesinde sahte kimlik engeli; displayName zaten profil-serbest alandır).
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && mid == request.auth.uid + '_' + request.resource.data.spaceId
+        && (!('username' in request.resource.data)
+            || request.resource.data.username == getUserData().get('username', ''));
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Y-2 (denetim): gömülü author snapshot'ı sahteciliğe kapalı olmalı —
+    // uid çağıranın kendisi, role gerçek rolden farklı olamaz (admin rozeti taklidi engeli).
+    function authorSnapshotOk() {
+      return request.resource.data.author.uid == request.auth.uid
+        && request.resource.data.author.role == getUserData().get('role', 'student');
     }
 
     // ─── Posts ────────────────────────────────────────────────────────────────
     match /posts/{postId} {
       allow read: if isApprovedUser();
 
-      // Yeni post oluşturma
-      allow create: if canWrite() && isApprovedUser() &&
-        request.resource.data.authorId == request.auth.uid;
+      // Yeni post oluşturma (Y-2: author.uid/role doğrulanır; K-1: banlı/susturulmuş engellenir)
+      allow create: if canWrite() && isApprovedUser() && notSilenced() &&
+        request.resource.data.authorId == request.auth.uid &&
+        authorSnapshotOk();
 
-      // viewCount, viewedBy, commentCount, reactions — onaylı herkes güncelleyebilir
-      // Bu alanlar: görüntüleme sayısı, yorum sayısı ve emoji tepkileri için gerekli
-      allow update: if isApprovedUser() &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['viewCount', 'viewedBy', 'commentCount', 'reactions']);
+      // Görüntüleme: viewCount yalnızca +1 artar, viewedBy'a yalnızca çağıranın kendi uid'i eklenir
+      allow update: if isApprovedUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount', 'viewedBy'])
+        && request.resource.data.viewCount == resource.data.viewCount + 1
+        && request.resource.data.viewedBy.hasAll(resource.data.viewedBy)
+        && request.resource.data.viewedBy.removeAll(resource.data.viewedBy).hasOnly([request.auth.uid]);
+
+      // Yorum sayacı: yalnızca ±1 değişebilir (keyfi değere set edilemez)
+      allow update: if isApprovedUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount'])
+        && (request.resource.data.commentCount == resource.data.commentCount + 1
+            || request.resource.data.commentCount == resource.data.commentCount - 1);
+
+      // Emoji tepkileri: yalnızca reactions alanı değişebilir (onaylı kullanıcı)
+      // Not: harita içi uid-bazlı kısıtlama Firestore kurallarında pratik değildir.
+      allow update: if isApprovedUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']);
+
+      // O-5 (denetim): anket oylaması — onaylı kullanıcı yalnızca poll alanını,
+      // anket bitmemişken, soru/durum/seçenek sayısı değişmeden güncelleyebilir.
+      // (Oy bütünlüğü reactions gibi kabul edilen sınırdır; tam çözüm: votes alt-koleksiyonu.)
+      allow update: if isApprovedUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['poll'])
+        && resource.data.poll != null
+        && resource.data.poll.isEnded == false
+        && request.resource.data.poll.question == resource.data.poll.question
+        && request.resource.data.poll.isEnded == resource.data.poll.isEnded
+        && request.resource.data.poll.options.size() == resource.data.poll.options.size();
 
       // İçerik düzenleme — yazar veya moderatör
       allow update: if canWrite() && (
@@ -85,8 +307,10 @@ service cloud.firestore {
     match /comments/{commentId} {
       allow read: if isApprovedUser();
 
-      allow create: if canWrite() && isApprovedUser() &&
-        request.resource.data.authorId == request.auth.uid;
+      // Y-2: author.uid/role doğrulanır (sahte rozet engeli); K-1: banlı/susturulmuş engellenir
+      allow create: if canWrite() && isApprovedUser() && notSilenced() &&
+        request.resource.data.authorId == request.auth.uid &&
+        authorSnapshotOk();
 
       // Reactions — onaylı herkes güncelleyebilir
       allow update: if isApprovedUser() &&
@@ -105,16 +329,110 @@ service cloud.firestore {
     match /notifications/{notifId} {
       allow read, update: if isSignedIn() &&
         resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn();
+      // Spam/oltalama engeli: istemci yalnızca KENDİSİNE bildirim oluşturabilir.
+      // Cross-user bildirimler (ör. yorum gelince yazara) sunucu/Cloud Function ile yapılmalı (kuralları aşar).
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
     // ─── Teacher Approvals ──────────────────────────────────────────────────
     match /teacherApprovals/{docId} {
       allow read: if isModerator();
-      allow create: if isSignedIn() && request.auth.uid == docId;
+      // O-1 (denetim): e-posta çağıranın KENDİ adresi olmalı — admin onay/ret'inde
+      // üçüncü kişiye e-posta tetikletme engeli.
+      allow create: if isSignedIn() && request.auth.uid == docId
+        && request.resource.data.email == request.auth.token.email;
       allow update: if isModerator();
       allow delete: if isModerator() || (isSignedIn() && request.auth.uid == docId);
+    }
+
+    // ─── Invites (davet) ────────────────────────────────────────────────────────
+    // Doküman id = davet kodu. Oluşturma yalnızca invite yetkisi/owner.
+    match /invites/{code} {
+      // GET: kodu bilen (giriş yapmış) okuyabilir — davet doğrulama için gerekli.
+      allow get:    if isSignedIn();
+      // LIST: yalnızca kendi davetlerini sorgulayabilir — TÜM davetlerin dökülmesi (enumerasyon) engellenir.
+      allow list:   if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      allow create: if isSignedIn() && (isOwner() || hasCap('invite'))
+        && request.resource.data.createdBy == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.createdBy == request.auth.uid || isOwner());
+      // uses sayacı güncellemesi sunucu (admin) tarafında yapılır — istemci update yok
+    }
+
+    // ─── Deleted Usernames (kalıcı rezervasyon) ─────────────────────────────────
+    // Silinen hesabın username'i buraya yazılır ve bir daha alınamaz.
+    match /deletedUsernames/{uname} {
+      allow read:   if isSignedIn();  // kayıtta rezervasyon kontrolü
+      // Yalnızca o username'in sahibi (silinmeden önce) rezerve edebilir.
+      allow create: if isSignedIn()
+        && uname == request.resource.data.username
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == uname;
+      allow update, delete: if isOwner();  // yalnızca owner kaldırabilir
+    }
+
+    // ─── System Logs (O1) ─────────────────────────────────────────────────────
+    // Owner üstünlüğü: logları YALNIZCA owner okuyabilir. Diğer yetkililer göremez.
+    // Yazma: giriş yapmış kullanıcı, yalnızca standart şema ile (spam/şekil bozma engeli);
+    // userId alanı yazanın kendi uid'i olmalı. Değiştirme/silme yok.
+    // (Oturumsuz olaylar — login/kayıt hatası — sunucu üzerinden yazılır: /api/log-event.)
+    // O-6 (denetim): istemcinin yazabileceği olay kodları yetkiye göre sınırlı —
+    // sahte 'mod.ban'/'email.sent' kaydıyla owner'ı yanıltma engeli.
+    // (auth.*/email.*/invite.* olayları yalnızca sunucudan — admin SDK — yazılır.)
+    function clientLogEventOk(e) {
+      return e == null
+        || e in ['user.register', 'verify.request']
+        || (e in ['space.create', 'space.delete'] && isApprovedUser())
+        || (e.matches('(mod|teacher|template)\\..*') && isModerator())
+        || (e in ['verify.approve', 'verify.reject'] && isAdmin());
+    }
+    match /systemLogs/{logId} {
+      allow read:   if isOwner();
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(
+             ['level', 'event', 'source', 'message', 'details', 'userId', 'userEmail', 'createdAt'])
+        && request.resource.data.level in ['info', 'warn', 'error']
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 500
+        && (request.resource.data.userId == null || request.resource.data.userId == request.auth.uid)
+        && (request.resource.data.userEmail == null || request.resource.data.userEmail == request.auth.token.email)
+        && clientLogEventOk(request.resource.data.event);
+      allow update, delete: if false;
+    }
+
+    // ─── E-posta Şablonları (O2) ──────────────────────────────────────────────
+    // Sunucu, şablonu çağıranın token'ıyla okur → okuma giriş yapmış herkese açık
+    // (şablonlar gizli veri içermez). Düzenleme yalnızca yönetici (manageUsers/owner).
+    match /emailTemplates/{templateId} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ─── Planlı E-postalar (O3) ───────────────────────────────────────────────
+    // Owner'a özel toplu e-posta planları. Yalnızca owner okur/yazar.
+    match /scheduledEmails/{docId} {
+      allow read, write: if isOwner();
+    }
+
+    // ─── Öğrenci Kartı Doğrulama Talepleri (O5) ───────────────────────────────
+    // KVKK: talebi yalnızca sahibi ve yönetici (manageUsers/owner) görebilir.
+    // Kullanıcı yalnızca kendi talebini 'pending' durumda oluşturur/yeniler;
+    // karar (approve/reject) yalnızca yönetici tarafından verilir.
+    match /verificationRequests/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.cardPath is string
+        && request.resource.data.cardPath.matches('studentCards/' + userId + '/.*');
+      // Reddedilen başvuruyu yeniden gönderme (yalnızca pending'e dönebilir)
+      allow update: if isSignedIn() && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.cardPath is string
+        && request.resource.data.cardPath.matches('studentCards/' + userId + '/.*');
+      // Yönetici kararı (status/reason/resolvedAt)
+      allow update: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
     }
   }
 }

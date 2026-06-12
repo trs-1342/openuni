@@ -21,7 +21,7 @@ import {
   createComment,
   getListedUsers,
 } from '@/lib/firestore'
-import { timeAgo, formatFileSize, CHANNEL_META, cn } from '@/lib/utils'
+import { timeAgo, formatFileSize, CHANNEL_META, cn, safeAttachmentUrl } from '@/lib/utils'
 import { PollWidget } from '@/components/posts/PollWidget'
 import type { Post, Space, Comment } from '@/types'
 import {
@@ -744,9 +744,9 @@ export default function PostDetailPage() {
                     <p className="text-xs font-medium text-text-muted flex items-center gap-1.5">
                       <Paperclip className="w-3 h-3" />Ekler ({post.attachments.length})
                     </p>
-                    {/* Resim önizlemeleri */}
-                    {post.attachments.filter(a => a.type === 'image').length > 0 && (() => {
-                      const imgs = post.attachments.filter(a => a.type === 'image')
+                    {/* Resim önizlemeleri (Y-3: yalnızca Storage kaynaklı URL'ler) */}
+                    {post.attachments.filter(a => a.type === 'image' && safeAttachmentUrl(a.url)).length > 0 && (() => {
+                      const imgs = post.attachments.filter(a => a.type === 'image' && safeAttachmentUrl(a.url))
                       return (
                         <div className="grid grid-cols-2 gap-2">
                           {imgs.map((att, idx) => (
@@ -767,9 +767,9 @@ export default function PostDetailPage() {
                         </div>
                       )
                     })()}
-                    {/* PDF ve diğer dosyalar */}
-                    {post.attachments.filter(a => a.type !== 'image').map(att => (
-                      <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer" download
+                    {/* PDF ve diğer dosyalar (Y-3: yalnızca Storage kaynaklı URL'ler) */}
+                    {post.attachments.filter(a => a.type !== 'image' && safeAttachmentUrl(a.url)).map(att => (
+                      <a key={att.id} href={safeAttachmentUrl(att.url)!} target="_blank" rel="noopener noreferrer" download
                         className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-background border border-surface-border hover:border-brand/40 text-xs text-text-secondary hover:text-text-primary transition-all group">
                         <FileText className={cn('w-3.5 h-3.5 shrink-0', att.type === 'pdf' ? 'text-accent-red' : 'text-accent-amber')} />
                         <span className="flex-1 truncate">{att.name}</span>

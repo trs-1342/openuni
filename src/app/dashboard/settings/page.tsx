@@ -7,7 +7,8 @@ import { Avatar } from '@/components/ui/Avatar'
 import { useUserProfile } from '@/hooks/useUserProfile'
 import { useAuthStore } from '@/store/authStore'
 import { DeleteAccountSection } from '@/components/settings/DeleteAccountSection'
-import { updateUserProfile, setUsername as saveUsernameToFirestore, isUsernameTaken } from '@/lib/firestore'
+import { VerifySection } from '@/components/settings/VerifySection'
+import { updateUserProfile, setUserPrivateData } from '@/lib/firestore'
 import { useThemeStore, THEMES } from '@/store/themeStore'
 import type { Theme } from '@/store/themeStore'
 import { changePassword, logoutUser, downloadMyData, resendVerificationEmail } from '@/lib/auth'
@@ -24,7 +25,7 @@ import {
   ChevronRight, Info, BookOpen, FileText, ExternalLink,
   Palette, Loader2, Camera, Trash2, Bell,
 } from 'lucide-react'
-import { cn, validateUsername } from '@/lib/utils'
+import { cn, validateBio } from '@/lib/utils'
 import {
   getFakulteList, getBolumList, getGradeOptions,
   USER_TYPE_LABELS, type UserType,
@@ -306,6 +307,7 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab]   = useState<'profile' | 'security' | 'data' | 'appearance' | 'notifications'>('profile')
 
   const [displayName,  setDisplayName]  = useState('')
+  const [bio,          setBio]          = useState('')
   const [userType,     setUserType]     = useState<UserType>('lisans')
   const [fakulte,      setFakulte]      = useState('')
   const [department,   setDepartment]   = useState('')
@@ -323,13 +325,9 @@ export default function SettingsPage() {
   const [notifSaved, setNotifSaved] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const { theme, setTheme } = useThemeStore()
-  // Username
-  const [username,        setUsernameInput]   = useState('')
-  const [originalUsername, setOriginalUsername] = useState('')
-  const [usernameError,   setUsernameError]   = useState('')
-  const [usernameChecking,setUsernameChecking]= useState(false)
-  const [usernameSaved,   setUsernameSaved]   = useState(false)
-  const [isListed,        setIsListed]        = useState(true)
+  // Username (yalnızca gösterim — kalıcı, değiştirilemez)
+  const [username, setUsernameInput] = useState('')
+  const [isListed, setIsListed]      = useState(true)
 
   // Sayfa açılışında token refresh — emailVerified güncel gelsin
   useEffect(() => {
@@ -341,13 +339,12 @@ export default function SettingsPage() {
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.displayName ?? '')
+      setBio((profile as any).bio ?? '')
       setUserType((profile as any).userType ?? 'lisans')
       setFakulte((profile as any).fakulte ?? '')
       setDepartment(profile.department ?? '')
       setGrade(profile.grade?.toString() ?? '')
-      const uname = (profile as any).username ?? ''
-      setUsernameInput(uname)
-      setOriginalUsername(uname)
+      setUsernameInput((profile as any).username ?? '')
       setIsListed((profile as any).isListedInDirectory !== false)
       setStudentId((profile as any).studentId ?? '')
       setEmailPostNotify((profile as any).emailPostNotify ?? false)
@@ -355,25 +352,7 @@ export default function SettingsPage() {
     }
   }, [profile])
 
-  async function handleSaveUsername() {
-    if (!firebaseUser || !profile) return
-    const err = validateUsername(username)
-    if (err) { setUsernameError(err); return }
-    const changesLeft = (profile as any).usernameChangesLeft ?? 2
-    const isFirst = !(profile as any).username
-    if (!isFirst && changesLeft <= 0) { setUsernameError('Kullanıcı adı değiştirme hakkınız kalmadı.'); return }
-    setUsernameChecking(true); setUsernameError('')
-    try {
-      await saveUsernameToFirestore(firebaseUser.uid, username)
-      const saved = username.toLowerCase()
-      setUsernameInput(saved)
-      setOriginalUsername(saved)
-      setUsernameSaved(true)
-      setTimeout(() => setUsernameSaved(false), 3000)
-    } catch (e: any) {
-      setUsernameError(e?.message ?? 'Hata oluştu.')
-    } finally { setUsernameChecking(false) }
-  }
+  // Y-1: username kalıcıdır — değiştirme akışı tamamen kaldırıldı (kural da engeller).
 
   // emailVerified true olduysa Firestore'daki isVerified'ı da güncelle
   useEffect(() => {
@@ -440,22 +419,26 @@ export default function SettingsPage() {
     e.preventDefault()
     if (!firebaseUser) return
     if (!displayName.trim()) { setProfileError('Ad soyad boş olamaz.'); return }
+    // D1: biyografi doğrulaması (düz metin, max 500, link/HTML yok)
+    const bioErr = validateBio(bio)
+    if (bioErr) { setProfileError(bioErr); return }
     setIsSaving(true)
     setProfileError('')
     try {
       const profileData: any = {
         displayName: displayName.trim(),
+        bio: bio.trim(),
         userType,
         grade: grade === 'hazirlik' ? 'hazirlik' : grade ? parseInt(grade) : null,
       }
       // Boş string ile mevcut veriyi ezme — sadece değer varsa yaz
       if (fakulte)    profileData.fakulte    = fakulte
       if (department) profileData.department = department
-      // studentId: sadece Firestore'da boşsa ekle (dolu olana dokunma)
-      if (studentId.trim() && !(profile as any)?.studentId) {
-        profileData.studentId = studentId.trim()
-      }
       await updateUserProfile(firebaseUser.uid, profileData)
+      // studentId hassas veri → private alt-dokümana yaz (sadece boşsa ekle)
+      if (studentId.trim() && !(profile as any)?.studentId) {
+        await setUserPrivateData(firebaseUser.uid, { studentId: studentId.trim() })
+      }
       await updateProfile(firebaseUser, { displayName: displayName.trim() })
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -586,6 +569,8 @@ export default function SettingsPage() {
           {/* Profil Tab */}
           {activeTab === 'profile' && (
             <section className="space-y-4">
+              {/* O5: hesap onaylı değilse öğrenci kartıyla doğrulama talebi */}
+              {(profile as any)?.isAdminVerified === false && <VerifySection />}
               <div className="card">
                 <form onSubmit={handleSaveProfile} className="space-y-4">
                   {/* Profil Fotoğrafı */}
@@ -646,42 +631,38 @@ export default function SettingsPage() {
                         placeholder="Ad Soyad" className="input pl-10" />
                     </div>
                   </div>
+
+                  {/* Biyografi (D1) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-medium text-text-secondary">Biyografi</label>
+                      <span className={cn('text-2xs tabular-nums', bio.length > 450 ? 'text-accent-amber' : 'text-text-muted')}>
+                        {bio.length}/500
+                      </span>
+                    </div>
+                    <textarea value={bio} maxLength={500} rows={3}
+                      onChange={e => { setBio(e.target.value); setProfileError(''); setIsDirty(true) }}
+                      placeholder="Kendinden kısaca bahset (düz metin; bağlantı eklenemez)"
+                      className="input resize-none leading-relaxed" />
+                    <p className="text-2xs text-text-muted mt-1">Profilinde görünür. Bağlantı (link) ve HTML kullanılamaz.</p>
+                  </div>
                   {/* Kullanıcı Adı */}
                   <div className="border border-surface-border rounded-xl p-4 space-y-3 bg-surface/30">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-medium text-text-secondary">Kullanıcı Adı</label>
                       <span className="text-2xs text-text-muted bg-surface px-2 py-0.5 rounded-full border border-surface-border">
-                        {(profile as any)?.usernameChangesLeft ?? 2} değiştirme hakkı kaldı
+                        Kalıcı
                       </span>
                     </div>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-muted">@</span>
-                        <input
-                          type="text"
-                          value={username}
-                          onChange={e => { setUsernameInput(e.target.value.toLowerCase()); setUsernameError('') }}
-                          placeholder="kullanici_adi"
-                          className={cn('input pl-7', usernameError && 'border-accent-red/50')}
-                          maxLength={30}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleSaveUsername}
-                        disabled={usernameChecking || !username || username === originalUsername}
-                        className="px-4 py-2 rounded-lg bg-brand text-white text-xs font-semibold hover:bg-brand/90 transition-all disabled:opacity-50 flex items-center gap-1.5 shrink-0"
-                      >
-                        {usernameChecking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : usernameSaved ? <CheckCircle className="w-3.5 h-3.5" /> : null}
-                        {usernameSaved ? 'Kaydedildi' : 'Kaydet'}
-                      </button>
+                    {/* Username artık kalıcı — değiştirilemez. Giriş için de kullanılır. */}
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-muted">@</span>
+                      <input type="text" value={username} disabled readOnly
+                        className="input pl-7 opacity-70 cursor-not-allowed" />
                     </div>
-                    {usernameError && (
-                      <p className="text-xs text-accent-red flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3 shrink-0" />{usernameError}
-                      </p>
-                    )}
-                    <p className="text-2xs text-text-muted">Harf, rakam, nokta (.), alt çizgi (_) ve tire (-) kullanılabilir. . _ - ile başlayıp bitemez.</p>
+                    <p className="text-2xs text-text-muted">
+                      Kullanıcı adın kalıcıdır ve değiştirilemez. Giriş yaparken e-postan veya kullanıcı adın ile giriş yapabilirsin.
+                    </p>
                     {/* Dizinde listeleme */}
                     <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, paddingTop:12, borderTop:'1px solid var(--color-surface-border, #2a3347)'}}>
                       <div style={{flex:1, minWidth:0}}>
@@ -765,19 +746,25 @@ export default function SettingsPage() {
                       <p className="text-2xs text-accent-amber mt-1">En az 6 rakam olmalıdır.</p>
                     )}
                   </div>
-                  {/* Statü seçimi */}
+                  {/* Statü seçimi — öğretmenlik kayıt+onay ile gelir, buradan seçilemez (taklit engeli) */}
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1.5">Statü</label>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {(['lisans','onlisans','ogretmen','diger'] as UserType[]).map(t => (
-                        <button key={t} type="button"
-                          onClick={() => { setUserType(t); setFakulte(''); setDepartment(''); setGrade(''); setIsDirty(true) }}
-                          className={cn('py-2 px-3 rounded-lg text-xs border transition-all text-left',
-                            userType === t ? 'bg-brand/10 border-brand text-brand' : 'border-surface-border text-text-muted hover:border-surface-active')}>
-                          {USER_TYPE_LABELS[t]}
-                        </button>
-                      ))}
-                    </div>
+                    {(userType === 'ogretmen' || (profile as any)?.userType === 'pending_teacher') ? (
+                      <div className="py-2 px-3 rounded-lg text-xs border border-brand/30 bg-brand/5 text-brand">
+                        {USER_TYPE_LABELS[userType]} {(profile as any)?.userType === 'pending_teacher' && '(onay bekliyor)'}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {(['lisans','onlisans','diger'] as UserType[]).map(t => (
+                          <button key={t} type="button"
+                            onClick={() => { setUserType(t); setFakulte(''); setDepartment(''); setGrade(''); setIsDirty(true) }}
+                            className={cn('py-2 px-3 rounded-lg text-xs border transition-all text-left',
+                              userType === t ? 'bg-brand/10 border-brand text-brand' : 'border-surface-border text-text-muted hover:border-surface-active')}>
+                            {USER_TYPE_LABELS[t]}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Fakülte / MYO */}
@@ -871,12 +858,13 @@ export default function SettingsPage() {
                   <Clock className="w-3.5 h-3.5" />Oturum
                 </h3>
                 <div className="card space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-text-primary font-medium">Otomatik oturum kapanması</p>
-                      <p className="text-xs text-text-muted mt-0.5">Giriş yaptıktan 3 saat sonra oturumun kapanır</p>
-                    </div>
-                    <span className="text-xs text-text-muted bg-surface border border-surface-border rounded px-2.5 py-1 tabular-nums">3 saat</span>
+                  {/* D-2 (denetim): "3 saat otomatik kapanma" ifadesi kaldırıldı —
+                      böyle bir mekanizma yok, yanlış güvenlik beklentisi yaratıyordu. */}
+                  <div>
+                    <p className="text-sm text-text-primary font-medium">Aktif oturum</p>
+                    <p className="text-xs text-text-muted mt-0.5">
+                      Oturumun bu cihazda sen çıkış yapana kadar açık kalır. Ortak bilgisayarlarda işin bitince çıkış yapmayı unutma.
+                    </p>
                   </div>
                   <div className="border-t border-surface-border pt-3">
                     <button onClick={handleLogout}

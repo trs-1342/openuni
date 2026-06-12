@@ -25,14 +25,16 @@ export default function MembersPage() {
     })
   }, [])
 
+  // D2: büyük/küçük harf duyarsız (TR), kısmi eşleşme; '@kullanici' biçimi desteklenir
   const filtered = users.filter(u => {
     if (!search.trim()) return true
-    const q = search.toLowerCase()
+    const q = search.trim().toLocaleLowerCase('tr')
+    const uq = q.replace(/^@/, '')
     return (
-      u.displayName?.toLowerCase().includes(q) ||
-      (u as any).username?.toLowerCase().includes(q) ||
-      u.department?.toLowerCase().includes(q) ||
-      (u as any).fakulte?.toLowerCase().includes(q)
+      u.displayName?.toLocaleLowerCase('tr').includes(q) ||
+      (u as any).username?.toLowerCase().includes(uq) ||
+      u.department?.toLocaleLowerCase('tr').includes(q) ||
+      (u as any).fakulte?.toLocaleLowerCase('tr').includes(q)
     )
   })
 

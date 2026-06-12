@@ -13,23 +13,39 @@ export default function LoginPage() {
   useAuthGuard()
   const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
-  const [email, setEmail]       = useState('')
+  const [identifier, setIdentifier] = useState('')   // e-posta VEYA kullanıcı adı
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError]       = useState('')
 
-  const isIGU = email.endsWith('@ogr.gelisim.edu.tr')
-  const isValidEmail = email.includes('@') && email.length > 5
+  const looksLikeEmail = identifier.includes('@')
+  const canSubmit = identifier.trim().length >= 3 && password.length > 0
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!isValidEmail) {
-      setError('Geçerli bir e-posta adresi girin')
+    if (!canSubmit) {
+      setError('E-posta/kullanıcı adı ve şifre girin')
       return
     }
     setIsLoading(true)
     setError('')
     try {
+      // Username ile giriş: sunucuda e-postaya çöz (şifre doğruysa)
+      let email = identifier.trim()
+      if (!looksLikeEmail) {
+        const res = await fetch('/api/resolve-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: identifier.trim().toLowerCase(), password }),
+        })
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}))
+          setError(j.error ?? 'Kullanıcı adı veya şifre hatalı.')
+          setIsLoading(false)
+          return
+        }
+        email = (await res.json()).email
+      }
       const user = await loginUser(email, password)
 
       if (!user.emailVerified) {
@@ -51,6 +67,15 @@ export default function LoginPage() {
       }
     } catch (err: any) {
       setError(getAuthErrorMessage(err?.code ?? ''))
+      // O1: giriş hatası logu — oturum yok, sunucu log ucuna gider (fire & forget)
+      fetch('/api/log-event', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'auth.login_error',
+          message: `Giriş başarısız: ${identifier.trim()}`,
+          details: { code: err?.code ?? 'unknown' },
+        }),
+      }).catch(() => {})
     } finally {
       setIsLoading(false)
     }
@@ -127,32 +152,23 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Email */}
+            {/* E-posta veya kullanıcı adı */}
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5">
-                Öğrenci E-postası
+                E-posta veya Kullanıcı Adı
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); setError('') }}
-                  placeholder="e-posta adresiniz"
-                  className={cn(
-                    'input pl-10',
-                    email && !isValidEmail && 'border-accent-red/50 focus:border-accent-red focus:ring-accent-red/20',
-                    email && isValidEmail && 'border-accent-green/50 focus:border-accent-green focus:ring-accent-green/20',
-                  )}
+                  type="text"
+                  value={identifier}
+                  onChange={(e) => { setIdentifier(e.target.value); setError('') }}
+                  placeholder="e-posta veya kullanıcı adın"
+                  className="input pl-10"
                   required
-                  autoComplete="email"
+                  autoComplete="username"
                 />
               </div>
-              {email && !isValidEmail && (
-                <p className="text-2xs text-accent-red mt-1.5 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" />
-                </p>
-              )}
             </div>
 
             {/* Password */}
@@ -195,10 +211,10 @@ export default function LoginPage() {
             {/* Submit */}
             <button
               type="submit"
-              disabled={isLoading || !email || !password}
+              disabled={isLoading || !canSubmit}
               className={cn(
                 'btn-primary w-full justify-center py-2.5 text-sm mt-2',
-                (isLoading || !email || !password) && 'opacity-60 cursor-not-allowed'
+                (isLoading || !canSubmit) && 'opacity-60 cursor-not-allowed'
               )}
             >
               {isLoading ? (

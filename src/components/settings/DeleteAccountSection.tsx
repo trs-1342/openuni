@@ -22,6 +22,10 @@ export function DeleteAccountSection() {
   const [confirmText, setConfirmText] = useState('')
   const [isLoading, setIsLoading]     = useState(false)
   const [error, setError]             = useState('')
+  // Seçimli silme: işaretlenenler TAMAMEN silinir, işaretlenmeyenler anonimleştirilir
+  const [delPosts, setDelPosts]       = useState(false)
+  const [delDocuments, setDelDocuments] = useState(false)
+  const [delComments, setDelComments] = useState(false)
 
   const canDelete = password.length >= 6 && confirmText === 'HESABIMI SIL'
 
@@ -30,7 +34,11 @@ export function DeleteAccountSection() {
     setIsLoading(true)
     setError('')
     try {
-      await deleteAccount(password)
+      await deleteAccount(password, {
+        deletePosts: delPosts,
+        deleteDocuments: delDocuments,
+        deleteComments: delComments,
+      })
       // Hesap silindi — login sayfasına yönlendir
       router.replace('/auth/login')
     } catch (err: any) {
@@ -56,7 +64,7 @@ export function DeleteAccountSection() {
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-text-primary">Hesabı Sil</h3>
             <p className="text-xs text-text-muted mt-1 leading-relaxed">
-              Hesabını kalıcı olarak silersin. Gönderilerin anonim olarak kalır, yorumların ve kişisel verilerin tamamen silinir. Bu işlem geri alınamaz.
+              Hesabını kalıcı olarak silersin. Hangi içeriklerin tamamen silineceğini (gönderi, döküman, yorum) sen seçersin; seçmediklerin anonim kalır. Bu işlem geri alınamaz.
             </p>
             <button
               onClick={() => setShowConfirm(true)}
@@ -78,16 +86,28 @@ export function DeleteAccountSection() {
       </div>
 
       <div className="space-y-4">
-        {/* Uyarı */}
-        <div className="text-xs text-text-secondary leading-relaxed space-y-1.5">
-          <p>Bu işlem sonucunda:</p>
-          <div className="pl-3 space-y-1">
-            <p>• Firebase hesabın kalıcı olarak silinecek</p>
-            <p>• Tüm kişisel verilerin (profil, ayarlar) silinecek</p>
-            <p>• Tüm yorumların silinecek</p>
-            <p>• Gönderilerin <span className="text-text-primary font-medium">"Silinen Hesap"</span> olarak anonimleştirilecek</p>
-            <p>• Aynı e-posta ile tekrar kayıt olabilirsin ama eski veriler geri gelmez</p>
-          </div>
+        {/* İçerik silme seçimi */}
+        <div className="space-y-2">
+          <p className="text-xs text-text-secondary leading-relaxed">
+            Hesabın ve kişisel verilerin her durumda silinir. Aşağıda <span className="text-text-primary font-medium">işaretlediklerin tamamen silinir</span>;
+            işaretlemediklerin <span className="text-text-primary font-medium">"Silinen Hesap"</span> olarak anonim kalır.
+          </p>
+          {([
+            { key: 'posts', label: 'Gönderilerimi sil', desc: 'Eki olmayan paylaşımlar', val: delPosts, set: setDelPosts },
+            { key: 'documents', label: 'Dökümanlarımı sil', desc: 'Dosya/ek içeren paylaşımlar (dosyalar dahil)', val: delDocuments, set: setDelDocuments },
+            { key: 'comments', label: 'Yorumlarımı sil', desc: 'Tüm yorumların', val: delComments, set: setDelComments },
+          ] as const).map(item => (
+            <label key={item.key} className="flex items-start gap-2.5 p-2.5 rounded-lg border border-surface-border bg-surface/50 cursor-pointer hover:border-surface-active">
+              <input type="checkbox" checked={item.val} onChange={e => item.set(e.target.checked)} className="mt-0.5 accent-accent-red" />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-text-primary">{item.label}</p>
+                <p className="text-2xs text-text-muted">{item.desc}</p>
+              </div>
+            </label>
+          ))}
+          <p className="text-2xs text-text-muted pl-1">
+            ⓘ Kullanıcı adın kalıcı olarak rezerve edilir; tekrar alınamaz.
+          </p>
         </div>
 
         {/* Şifre */}

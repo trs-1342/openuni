@@ -2,7 +2,7 @@
 
 import { useEffect, useCallback, useState } from 'react'
 import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, safeAttachmentUrl } from '@/lib/utils'
 
 export interface LightboxImage {
   url:  string
@@ -15,8 +15,12 @@ interface LightboxProps {
   onClose:    () => void
 }
 
-export function Lightbox({ images, startIndex, onClose }: LightboxProps) {
-  const [current, setCurrent] = useState(startIndex)
+export function Lightbox({ images: rawImages, startIndex, onClose }: LightboxProps) {
+  // Y-3 (denetim): yalnızca Storage kaynaklı URL'ler gösterilir/indirilir
+  const images = rawImages.filter(i => safeAttachmentUrl(i.url))
+  const [current, setCurrent] = useState(
+    Math.min(Math.max(0, startIndex), Math.max(0, images.length - 1))
+  )
   const [zoomed,  setZoomed]  = useState(false)
 
   const prev = useCallback(() => {
@@ -44,6 +48,7 @@ export function Lightbox({ images, startIndex, onClose }: LightboxProps) {
   }, [onClose, prev, next])
 
   const img = images[current]
+  if (!img) return null
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center">

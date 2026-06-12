@@ -17,6 +17,9 @@ export interface User {
   department?: string
   grade?: number | string
   role: UserRole
+  capabilities?: string[]   // atanan yetki bayrakları (bkz. lib/permissions.ts)
+  isSystemOwner?: boolean   // sistem sahibi bayrağı (owner; rolden bağımsız)
+  bio?: string              // biyografi (max 500, düz metin — D1)
   isVerified: boolean
   bookmarks?: string[]
   isBanned?: boolean
@@ -28,7 +31,9 @@ export interface User {
   lastActiveAt: Date
 }
 
-export type UserRole = 'student' | 'moderator' | 'admin'
+// Not: yetki artık capabilities ile verilir; role çoğunlukla owner ayrımı + geriye dönük
+// uyum (eski admin/moderator) içindir. 'owner' = sistem sahibi (tek).
+export type UserRole = 'student' | 'moderator' | 'admin' | 'owner'
 
 export interface Space {
   id: string; name: string; slug: string; description: string
@@ -73,11 +78,16 @@ export interface Poll {
   isEnded: boolean
 }
 
+// Gönderi tipi: ders içeriği mi, sosyal mi? (O4 — anasayfa filtresi)
+// Eski gönderilerde alan yoktur; yokluk 'sosyal' sayılır.
+export type PostKind = 'ders' | 'sosyal'
+
 export interface Post {
   id: string; channelId: string; spaceId: string
   authorId: string; author: Pick<User, 'uid' | 'displayName' | 'avatarUrl' | 'role' | 'username'>
   title: string; content: string; attachments: Attachment[]
   tags: string[]; isPinned: boolean; isAnnouncement: boolean
+  postKind?: PostKind
   status: PostStatus; commentCount: number; viewCount: number
   reactions?: Record<string, string[]>
   poll?: Poll

@@ -1,0 +1,78 @@
+rules_version = '2';
+
+// OpenUni Firebase Storage güvenlik kuralları
+// Yüklemeler istemcide useFileUpload ile yapılır (posts/... yolu).
+// Tip/boyut kısıtlaması SUNUCU tarafında burada zorlanır (istemci kontrolü atlatılabilir).
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // İzin verilen içerik türleri (useFileUpload ile aynı: pdf, görsel, word)
+    function isAllowedType() {
+      return request.resource.contentType.matches('application/pdf')
+        || request.resource.contentType.matches('image/(jpeg|png|webp|gif)')
+        || request.resource.contentType.matches('application/msword')
+        || request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    }
+
+    // Maksimum 25 MB (useFileUpload MAX_SIZE_MB ile aynı)
+    function isUnderSizeLimit() {
+      return request.resource.size < 25 * 1024 * 1024;
+    }
+
+    // Yetkili (owner / kullanıcı yönetimi / eski admin) — Firestore'dan capability okur
+    // DENETİM (emulator): opsiyonel alanlar (isSystemOwner/capabilities) .get(k,default)
+    // ile okunur — çoğu kullanıcı dokümanında bu alanlar yok; doğrudan erişim kuralı
+    // "Property undefined" ile çökertiyordu.
+    function isPrivileged() {
+      let d = firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+      return request.auth.token.email == 'khalil.khattab@ogr.gelisim.edu.tr'
+        || d.get('isSystemOwner', false) == true
+        || ('manageUsers' in d.get('capabilities', []))
+        || d.get('role', '') == 'admin';
+    }
+
+    // ─── Post ekleri (SR-4: KULLANICI-KAPSAMLI YOL ile overwrite koruması) ─────
+    // DENETİM (emulator): Storage'da "üzerine yazma" CREATE olarak değerlendiriliyor
+    // (var olan nesne görünmüyor) → create/update ayrımıyla overwrite engellenemiyordu.
+    // GERÇEK çözüm: her kullanıcı YALNIZCA kendi klasörüne (posts/{uid}/...) yazar; başkasının
+    // dosyasının yoluna yazamaz/üzerine yazamaz. useFileUpload yolu posts/{uid}/... kurar.
+    match /posts/{uid}/{allPaths=**} {
+      allow read:   if isSignedIn();
+      allow write:  if isSignedIn() && request.auth.uid == uid && isAllowedType() && isUnderSizeLimit();
+      allow delete: if isSignedIn() && (request.auth.uid == uid || isPrivileged());
+    }
+
+    // ─── Profil fotoğrafları (K-2: bu yol kurallarda eksikti — avatar yükleme
+    // deploy'da bozulacaktı). Dosya adı {uid}.{ext} — yalnızca sahibi yazar/siler.
+    match /avatars/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && fileName.matches(request.auth.uid + '\\.[A-Za-z0-9]+')
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size < 3 * 1024 * 1024;
+      allow delete: if isSignedIn()
+        && (fileName.matches(request.auth.uid + '\\.[A-Za-z0-9]+') || isPrivileged());
+    }
+
+    // ─── Öğrenci kartı doğrulama görselleri (O5) ─────────────────────────────
+    // KVKK: kartı YALNIZCA sahibi ve inceleme yetkilisi (isPrivileged) görebilir.
+    // Sahibi yalnızca görsel (≤10MB) yükler; inceleme bitince görsel silinir.
+    match /studentCards/{uid}/{fileName} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isPrivileged());
+      allow create, update: if isSignedIn() && request.auth.uid == uid
+        && request.resource.contentType.matches('image/(jpeg|png|webp)')
+        && request.resource.size < 10 * 1024 * 1024;
+      allow delete: if isSignedIn() && (request.auth.uid == uid || isPrivileged());
+    }
+
+    // Tanımlanmamış tüm diğer yollar: erişim yok
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -11,6 +11,26 @@ export const USER_TYPE_LABELS: Record<UserType, string> = {
   diger:     '👤 Diğer',
 }
 
+// ─── Öğretim görevlisi / akademik unvanlar (Y3) ───────────────────────────────
+// Not: ön lisans/lisans bir "akademik unvan" değildir; onlar öğrenci tarafındadır.
+export const TEACHER_TITLES = [
+  'ogretim_gorevlisi',
+  'arastirma_gorevlisi',
+  'dr_ogretim_uyesi',
+  'docent',
+  'profesor',
+] as const
+
+export type TeacherTitle = typeof TEACHER_TITLES[number]
+
+export const TEACHER_TITLE_LABELS: Record<TeacherTitle, string> = {
+  ogretim_gorevlisi:   'Öğretim Görevlisi',
+  arastirma_gorevlisi: 'Araştırma Görevlisi',
+  dr_ogretim_uyesi:    'Dr. Öğretim Üyesi',
+  docent:              'Doçent (Doç. Dr.)',
+  profesor:            'Profesör (Prof. Dr.)',
+}
+
 // Lisans fakülte → bölümler
 export const LISANS_FAKULTELER: Record<string, string[]> = {
   'Mühendislik ve Mimarlık Fakültesi': [

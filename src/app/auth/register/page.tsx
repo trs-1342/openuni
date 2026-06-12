@@ -2,7 +2,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Eye, EyeOff, ArrowRight, Lock, Mail, User,
@@ -12,8 +12,10 @@ import {
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { cn, isValidStudentEmail } from '@/lib/utils'
 import { registerUser, getAuthErrorMessage } from '@/lib/auth'
-import { validateUsername } from '@/lib/utils'
-import { USER_TYPE_LABELS, getFakulteList, getBolumList, getGradeOptions } from '@/lib/departments'
+import { joinSpace, getInvite } from '@/lib/firestore'
+import { useSearchParams } from 'next/navigation'
+import { validateUsername, validateDisplayName } from '@/lib/utils'
+import { USER_TYPE_LABELS, getFakulteList, getBolumList, getGradeOptions, TEACHER_TITLES, TEACHER_TITLE_LABELS } from '@/lib/departments'
 import type { UserType } from '@/lib/departments'
 
 // ─── Kayıt modu ──────────────────────────────────────────────────────────────
@@ -22,6 +24,7 @@ type RegisterMode = 'igu' | 'visitor' | null
 interface FormState {
   email: string; displayName: string; studentId: string; username: string
   userType: UserType | ''; fakulte: string; department: string; grade: string
+  teacherTitle: string  // öğretim görevlisi unvanı (Y3)
   password: string; passwordConfirm: string
   // Ziyaretçi
   hasUniversity: boolean | null; visitorUniversity: string; visitorFakulte: string; visitorDepartment: string
@@ -77,14 +80,25 @@ function ModePicker({ onSelect }: { onSelect: (m: RegisterMode) => void }) {
 }
 
 // ─── Ana bileşen ──────────────────────────────────────────────────────────────
+// useSearchParams (davet kodu) Suspense gerektirir — sarmalayıcı default export
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <RegisterPageInner />
+    </Suspense>
+  )
+}
+
+function RegisterPageInner() {
   useAuthGuard()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const inviteCode = (searchParams.get('invite') ?? '').toLowerCase().trim()
 
   const [mode, setMode] = useState<RegisterMode>(null)
   const [form, setForm] = useState<FormState>({
     email: '', displayName: '', studentId: '', username: '', userType: '',
-    fakulte: '', department: '', grade: '', password: '', passwordConfirm: '',
+    fakulte: '', department: '', grade: '', teacherTitle: '', password: '', passwordConfirm: '',
     hasUniversity: null, visitorUniversity: '', visitorFakulte: '', visitorDepartment: '',
   })
   const [showPassword, setShowPassword] = useState(false)
@@ -95,7 +109,7 @@ export default function RegisterPage() {
   function update(key: keyof FormState, value: any) {
     setForm(prev => {
       const next = { ...prev, [key]: value }
-      if (key === 'userType') { next.fakulte = ''; next.department = ''; next.grade = '' }
+      if (key === 'userType') { next.fakulte = ''; next.department = ''; next.grade = ''; next.teacherTitle = '' }
       if (key === 'fakulte')  { next.department = ''; next.grade = '' }
       if (key === 'hasUniversity' && !value) {
         next.visitorUniversity = ''; next.visitorFakulte = ''; next.visitorDepartment = ''
@@ -109,16 +123,20 @@ export default function RegisterPage() {
   const emailValid     = mode === 'visitor' ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) : isValidStudentEmail(form.email)
   const passwordsMatch = form.password === form.passwordConfirm && form.passwordConfirm !== ''
   const usernameErr    = form.username ? validateUsername(form.username) : null
+  const displayNameErr = form.displayName ? validateDisplayName(form.displayName) : null
 
   const isTeacher = form.userType === 'ogretmen' || form.userType === 'diger'
+  // Öğretim görevlisi unvanı yalnızca 'ogretmen' için zorunlu ('diger' için opsiyonel)
+  const needsTitle = form.userType === 'ogretmen'
 
   // IGÜ adım 1
-  const iguStep1Ok = emailValid && form.displayName.trim() !== '' && form.userType !== '' &&
+  const iguStep1Ok = emailValid && form.displayName.trim() !== '' && !displayNameErr && form.userType !== '' &&
     (isTeacher || (form.fakulte !== '' && form.department !== '')) &&
-    (isTeacher || form.studentId.trim().length >= 6)
+    (isTeacher || form.studentId.trim().length >= 6) &&
+    (!needsTitle || form.teacherTitle !== '')
 
   // Ziyaretçi adım 1
-  const visitorStep1Ok = emailValid && form.displayName.trim() !== '' &&
+  const visitorStep1Ok = emailValid && form.displayName.trim() !== '' && !displayNameErr &&
     form.username.trim().length >= 3 && !usernameErr &&
     form.hasUniversity !== null &&
     (form.hasUniversity === false || (form.visitorUniversity.trim() !== '' && form.visitorFakulte.trim() !== '' && form.visitorDepartment.trim() !== ''))
@@ -137,8 +155,9 @@ export default function RegisterPage() {
     if (!canSubmit) return
     setIsLoading(true); setError('')
     try {
+      let createdUser
       if (mode === 'visitor') {
-        await registerUser({
+        createdUser = await registerUser({
           email:       form.email,
           password:    form.password,
           displayName: form.displayName,
@@ -151,15 +170,39 @@ export default function RegisterPage() {
           },
         })
       } else {
-        await registerUser({
+        createdUser = await registerUser({
           email:       form.email,
           password:    form.password,
           displayName: form.displayName,
           department:  form.department,
           grade:       form.grade || undefined,
           username:    form.username.toLowerCase().trim(),
-          extra: { studentId: form.studentId, userType: form.userType, fakulte: form.fakulte },
+          extra: {
+            studentId: form.studentId, userType: form.userType, fakulte: form.fakulte,
+            ...(form.teacherTitle ? { teacherTitle: form.teacherTitle } : {}),
+          },
         })
+      }
+      // Davetle gelindiyse: erişim ver (admin SDK) + topluluğa katıl (istemci, SDK'sız da çalışır)
+      if (inviteCode && createdUser) {
+        // 1) Topluluğa katılma — daveti istemci okuyup katılır (admin SDK gerekmez)
+        try {
+          const inv = await getInvite(inviteCode)
+          if (inv?.spaceId) {
+            await joinSpace(createdUser.uid, inv.spaceId, { displayName: form.displayName, username: form.username.toLowerCase().trim() })
+          }
+        } catch { /* davet okunamadı/katılınamadı — akışı kesme */ }
+        // 2) Erişim verme (isAdminVerified) — yalnızca admin SDK yapılandırıldıysa
+        try {
+          const idToken = await createdUser.getIdToken().catch(() => null)
+          if (idToken) {
+            await fetch('/api/redeem-invite', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+              body: JSON.stringify({ code: inviteCode }),
+            }).catch(() => {})
+          }
+        } catch { /* davet erişimi verilemedi — akışı kesme */ }
       }
       router.replace('/auth/verify-email')
     } catch (err: any) {
@@ -189,6 +232,11 @@ export default function RegisterPage() {
             {mode === 'igu'   && 'IGÜ öğrenci / öğretim görevlisi hesabı'}
             {mode === 'visitor' && 'Ziyaretçi hesabı'}
           </p>
+          {inviteCode && (
+            <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-brand/10 border border-brand/20 text-brand text-xs">
+              <CheckCircle className="w-3.5 h-3.5 shrink-0" /> Bir davet bağlantısıyla kaydoluyorsun.
+            </div>
+          )}
         </div>
 
         {/* Mod seçimi */}
@@ -247,6 +295,7 @@ export default function RegisterPage() {
                       <input type="text" value={form.displayName} onChange={e => update('displayName', e.target.value)}
                         placeholder="Ad Soyad" className="input pl-10" required />
                     </div>
+                    {displayNameErr && <p className="text-2xs text-accent-red mt-1">{displayNameErr}</p>}
                   </div>
                   {/* Username */}
                   <div>
@@ -294,6 +343,21 @@ export default function RegisterPage() {
                       ))}
                     </div>
                   </div>
+                  {/* Öğretim görevlisi unvanı (Y3) — yalnızca 'ogretmen' seçilince */}
+                  {form.userType === 'ogretmen' && (
+                    <div>
+                      <label className="block text-xs font-medium text-text-secondary mb-1.5">Akademik Unvan / Eğitim Seviyesi *</label>
+                      <div className="relative">
+                        <GraduationCap className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                        <select value={form.teacherTitle} onChange={e => update('teacherTitle', e.target.value)}
+                          className="input pl-10 appearance-none bg-surface" required>
+                          <option value="">Seçin</option>
+                          {TEACHER_TITLES.map(t => <option key={t} value={t}>{TEACHER_TITLE_LABELS[t]}</option>)}
+                        </select>
+                      </div>
+                      <p className="text-2xs text-text-muted mt-1">Öğretim görevlisi hesapların admin onayından geçer.</p>
+                    </div>
+                  )}
                   {/* Fakülte / Bölüm / Sınıf */}
                   {form.userType && !isTeacher && fakulteList.length > 0 && (
                     <div>
@@ -395,6 +459,7 @@ export default function RegisterPage() {
                       <input type="text" value={form.displayName} onChange={e => update('displayName', e.target.value)}
                         placeholder="Ad Soyad" className="input pl-10" required />
                     </div>
+                    {displayNameErr && <p className="text-2xs text-accent-red mt-1">{displayNameErr}</p>}
                   </div>
                   {/* Username */}
                   <div>
